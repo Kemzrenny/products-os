@@ -1,0 +1,166 @@
+@import "tailwindcss";
+
+/* Products OS. The look: a warm off-white page, big serif headlines with an italic
+   second line, Plus Jakarta Sans for everything else, black pill buttons, white cards with
+   soft edges, and one accent, cobalt, for focus, progress and the active place. */
+
+:root {
+  --bg: #fbfaf8;
+  --bg-2: #f4f2ee;
+  --card: #ffffff;
+  --line: #ece9e3;
+  --line-2: #ddd9d1;
+  --ink: #1f1f1f;
+  --ink-2: #3a3833;
+  --muted: #6b6a66;
+  --subtle: #8b8479;
+  --field: #f6f4f0;
+  --accent: #2447d6;
+  --accent-ink: #1b37a8;
+  --accent-soft: #e9edfc;
+  --good: #1f6b4f;
+  --good-soft: #def4e7;
+  --warn: #9a4a10;
+  --warn-soft: #fdecdc;
+  --bad: #b42318;
+  --bad-soft: #fde8e6;
+  color-scheme: light;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-bg-2: var(--bg-2);
+  --color-card: var(--card);
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-field: var(--field);
+  --color-accent: var(--accent);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-soft: var(--accent-soft);
+  --color-good: var(--good);
+  --color-good-soft: var(--good-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-bad: var(--bad);
+  --color-bad-soft: var(--bad-soft);
+  --font-sans: "Plus Jakarta Sans Variable", "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-display: "Instrument Serif", Georgia, "Times New Roman", serif;
+  --shadow-soft: 0 1px 2px rgb(31 31 31 / 0.04), 0 8px 24px -12px rgb(31 31 31 / 0.12);
+  --shadow-float: 0 2px 4px rgb(31 31 31 / 0.04), 0 18px 40px -16px rgb(31 31 31 / 0.22);
+}
+
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-feature-settings: "ss01";
+}
+
+/* Headlines: serif, tight, the second line in italic. */
+@utility display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+
+@utility btn {
+  @apply inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-full px-4 text-[13px] font-bold whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-55;
+}
+@utility btn-primary {
+  @apply btn bg-ink text-white hover:bg-ink-2;
+}
+@utility btn-accent {
+  @apply btn bg-accent text-white hover:bg-accent-ink;
+}
+@utility btn-quiet {
+  @apply btn border border-line bg-card text-ink shadow-[var(--shadow-soft)] hover:bg-field;
+}
+@utility btn-ghost {
+  @apply btn text-ink hover:bg-bg-2;
+}
+@utility btn-danger {
+  @apply btn border border-line bg-card text-bad hover:bg-bad-soft;
+}
+@utility btn-sm {
+  @apply h-8 px-3 text-xs;
+}
+@utility field {
+  @apply min-h-10 w-full rounded-xl border border-line bg-card px-3 py-2 text-sm text-ink shadow-[0_1px_0_rgb(31_31_31/0.02)] placeholder:text-subtle focus:border-accent focus:ring-4 focus:ring-accent-soft focus:outline-none;
+}
+@utility label {
+  @apply mb-1.5 block text-xs font-semibold text-ink-2;
+}
+@utility hint {
+  @apply mt-1 text-xs text-muted;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-card shadow-[var(--shadow-soft)];
+}
+@utility eyebrow {
+  @apply text-[11px] font-bold tracking-[0.14em] text-muted uppercase;
+}
+@utility link {
+  @apply font-semibold text-accent hover:underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Rendered markdown (PRDs, briefings, Copilot answers). */
+.prose-pos {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--ink-2);
+}
+.prose-pos h1,
+.prose-pos h2,
+.prose-pos h3 {
+  color: var(--ink);
+  font-weight: 700;
+  margin: 1.4em 0 0.4em;
+  line-height: 1.3;
+}
+.prose-pos h1 { font-size: 20px; }
+.prose-pos h2 { font-size: 16px; }
+.prose-pos h3 { font-size: 14px; }
+.prose-pos > :first-child { margin-top: 0; }
+.prose-pos p { margin: 0.5em 0; }
+.prose-pos ul,
+.prose-pos ol { margin: 0.5em 0; padding-left: 1.3em; }
+.prose-pos ul { list-style: disc; }
+.prose-pos ol { list-style: decimal; }
+.prose-pos li { margin: 0.2em 0; }
+.prose-pos li.task { list-style: none; margin-left: -1.3em; }
+.prose-pos strong { color: var(--ink); }
+.prose-pos code { background: var(--bg-2); border-radius: 6px; padding: 1px 5px; font-size: 12.5px; }
+
+/* Safe areas for the installed app on phones. */
+.pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0px); }
+.pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+
+@media (prefers-reduced-motion: no-preference) {
+  .float-a { animation: float 7s ease-in-out infinite; }
+  .float-b { animation: float 8s ease-in-out -2s infinite; }
+  .float-c { animation: float 9s ease-in-out -4s infinite; }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+/* Grid items may shrink below their content's width, so long titles truncate instead of
+   pushing the page wider than a phone screen. */
+.grid > * {
+  min-width: 0;
+}

@@ -1,0 +1,533 @@
+// Products OS. A strategy-to-outcome operating system for product teams.
+// Six modules share one set of objects: an organisation sets its strategy, ideas are
+// evaluated against it, approved ideas become initiatives on a roadmap, AI agents draft
+// work for people to approve, and the Command Centre shows leadership where it all stands.
+//
+// Every object is scoped to a workspace (and so to an organisation). Strategy is versioned
+// so a decision can always be read against what was known when it was made.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------- 01. Organisation setup ----------
+
+enum Role {
+  ADMIN // everything: strategy, approvals, team, settings
+  EDITOR // ideas, evaluations, roadmap, agent drafts; approves PRDs
+  CONTRIBUTOR // submits ideas, adds effort, updates milestones and tasks
+  VIEWER // reads, submits ideas
+}
+
+model User {
+  id                String    @id @default(uuid())
+  name              String
+  email             String    @unique
+  passwordHash      String
+  createdAt         DateTime  @default(now())
+  lastActiveAt      DateTime?
+  passwordChangedAt DateTime?
+
+  memberships     Member[]
+  ideas           Idea[]           @relation("IdeaSubmitter")
+  decisions       Decision[]
+  ownedInitiatives Initiative[]    @relation("InitiativeOwner")
+  ownedMilestones Milestone[]      @relation("MilestoneOwner")
+  tasks           Task[]           @relation("TaskOwner")
+  agentRuns       AgentRun[]
+  reviewedDrafts  Draft[]          @relation("DraftReviewer")
+  conversations   Conversation[]
+  auditLogs       AuditLog[]
+  efforts         Idea[]           @relation("EffortBy")
+}
+
+model Organisation {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  vision    String?  // company vision
+  createdAt DateTime @default(now())
+
+  members     Member[]
+  invitations Invitation[]
+  workspaces  Workspace[]
+}
+
+model Member {
+  id             String       @id @default(uuid())
+  organisationId String
+  userId         String
+  role           Role
+  createdAt      DateTime     @default(now())
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, userId])
+}
+
+model Invitation {
+  id             String       @id @default(uuid())
+  organisationId String
+  email          String
+  role           Role
+  token          String       @unique
+  invitedById    String?
+  createdAt      DateTime     @default(now())
+  acceptedAt     DateTime?
+  organisation   Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, email])
+}
+
+model Workspace {
+  id              String       @id @default(uuid())
+  organisationId  String
+  name            String
+  strategyVersion Int          @default(1)
+  capacityNote    String?      // e.g. "2 squads, ~16 engineer-weeks a quarter"
+  createdAt       DateTime     @default(now())
+  organisation    Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  products        Product[]
+  pillars         Pillar[]
+  objectives      Objective[]
+  initiatives     Initiative[]
+  ideas           Idea[]
+  strategyVersions StrategyVersion[]
+  agentRuns       AgentRun[]
+  drafts          Draft[]
+  conversations   Conversation[]
+  briefings       Briefing[]
+  auditLogs       AuditLog[]
+}
+
+model Product {
+  id          String    @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  vision      String?   // product vision
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  kpis        Kpi[]
+  okrs        Okr[]
+  ideas       Idea[]
+  initiatives Initiative[]
+}
+
+model Kpi {
+  id         String     @id @default(uuid())
+  productId  String
+  name       String
+  unit       String?    // %, ₦, users…
+  baseline   Float?
+  current    Float?
+  target     Float?
+  dueDate    DateTime?
+  createdAt  DateTime   @default(now())
+  product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
+  keyResults KeyResult[]
+}
+
+// ---------- 02. Strategy management ----------
+
+model Pillar {
+  id          String      @id @default(uuid())
+  workspaceId String
+  name        String
+  description String?
+  position    Int         @default(0)
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  objectives  Objective[]
+}
+
+enum ObjectiveStatus {
+  ON_TRACK
+  AT_RISK
+  OFF_TRACK
+  DONE
+}
+
+// Company objective: what the business commits to this period.
+model Objective {
+  id          String          @id @default(uuid())
+  workspaceId String
+  pillarId    String?
+  title       String
+  description String?
+  metric      String?         // how success is measured, in words
+  target      String?
+  dueDate     DateTime?
+  status      ObjectiveStatus @default(ON_TRACK)
+  progress    Int             @default(0) // 0–100, set by people or rolled up from key results
+  createdAt   DateTime        @default(now())
+  workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  pillar      Pillar?         @relation(fields: [pillarId], references: [id], onDelete: SetNull)
+
+  okrs        Okr[]
+  initiatives InitiativeObjective[]
+  ideas       IdeaObjective[]
+}
+
+// Product OKR: a product's objective, measured by key results, contributing to a company objective.
+model Okr {
+  id          String      @id @default(uuid())
+  productId   String
+  objectiveId String?
+  title       String
+  period      String?     // e.g. "Q1 2027"
+  createdAt   DateTime    @default(now())
+  product     Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+  objective   Objective?  @relation(fields: [objectiveId], references: [id], onDelete: SetNull)
+  keyResults  KeyResult[]
+}
+
+model KeyResult {
+  id       String  @id @default(uuid())
+  okrId    String
+  kpiId    String?
+  title    String
+  baseline Float?
+  current  Float?
+  target   Float?
+  unit     String?
+  okr      Okr     @relation(fields: [okrId], references: [id], onDelete: Cascade)
+  kpi      Kpi?    @relation(fields: [kpiId], references: [id], onDelete: SetNull)
+}
+
+// A snapshot of the strategy every time it changes, so evaluations and decisions can be
+// read against the version they were made under.
+model StrategyVersion {
+  id          String    @id @default(uuid())
+  workspaceId String
+  version     Int
+  snapshot    Json
+  note        String?
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, version])
+}
+
+// ---------- 03. Ideas and prioritisation ----------
+
+enum IdeaStatus {
+  NEW
+  EVALUATED
+  APPROVED
+  EXPLORING
+  DEFERRED
+  REJECTED
+}
+
+enum Effort {
+  XS
+  S
+  M
+  L
+  XL
+}
+
+model Idea {
+  id            String      @id @default(uuid())
+  workspaceId   String
+  productId     String?
+  title         String
+  description   String?
+  source        String?     // CEO, customer, sales, support, team…
+  requester     String?
+  problemWho    String?     // who has the problem
+  problemWhat   String?     // what the problem is
+  problemWhy    String?     // why it matters now
+  effort        Effort?
+  effortNote    String?
+  effortById    String?
+  status        IdeaStatus  @default(NEW)
+  rank          Int?        // backlog order set by the Prioritisation Agent (lower = higher)
+  submittedById String
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  workspace     Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product       Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  submittedBy   User        @relation("IdeaSubmitter", fields: [submittedById], references: [id])
+  effortBy      User?       @relation("EffortBy", fields: [effortById], references: [id])
+
+  evidence      Evidence[]
+  evaluations   Evaluation[]
+  decisions     Decision[]
+  objectives    IdeaObjective[]
+  initiative    Initiative?
+}
+
+model IdeaObjective {
+  ideaId      String
+  objectiveId String
+  idea        Idea      @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  objective   Objective @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@id([ideaId, objectiveId])
+}
+
+enum EvidenceKind {
+  QUOTE
+  METRIC
+  LINK
+  NOTE
+}
+
+model Evidence {
+  id        String       @id @default(uuid())
+  ideaId    String
+  kind      EvidenceKind
+  content   String
+  source    String?
+  createdAt DateTime     @default(now())
+  idea      Idea         @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+}
+
+enum Recommendation {
+  BUILD_NOW
+  EXPLORE
+  DEFER
+  REJECT
+}
+
+model Evaluation {
+  id              String         @id @default(uuid())
+  ideaId          String
+  ratings         Json           // { alignment, customerImpact, businessImpact, evidence, effort, risk } each { level, reason }
+  impactScore     Int            // 0–100
+  alignmentScore  Int            // 0–100
+  recommendation  Recommendation
+  rationale       String
+  objectiveIds    String[]
+  openQuestions   String[]
+  model           String
+  strategyVersion Int
+  createdAt       DateTime       @default(now())
+  idea            Idea           @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+}
+
+enum DecisionOutcome {
+  APPROVED
+  EXPLORING
+  DEFERRED
+  REJECTED
+}
+
+model Decision {
+  id                String          @id @default(uuid())
+  ideaId            String
+  outcome           DecisionOutcome
+  reason            String
+  deferUntil        DateTime?
+  aiRecommendation  Recommendation?
+  strategyVersion   Int
+  decidedById       String
+  createdAt         DateTime        @default(now())
+  idea              Idea            @relation(fields: [ideaId], references: [id], onDelete: Cascade)
+  decidedBy         User            @relation(fields: [decidedById], references: [id])
+}
+
+// ---------- 04. Product planning ----------
+
+enum Horizon {
+  NOW
+  NEXT
+  LATER
+}
+
+enum WorkStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  AT_RISK
+  BLOCKED
+  DONE
+}
+
+model Initiative {
+  id          String      @id @default(uuid())
+  workspaceId String
+  productId   String?
+  ideaId      String?     @unique
+  title       String
+  description String?
+  horizon     Horizon     @default(NEXT)
+  status      WorkStatus  @default(NOT_STARTED)
+  statusNote  String?     // required when at risk or blocked
+  ownerId     String?
+  startDate   DateTime?
+  endDate     DateTime?
+  prd         String?     // approved PRD, markdown
+  position    Int         @default(0)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  product     Product?    @relation(fields: [productId], references: [id], onDelete: SetNull)
+  idea        Idea?       @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  owner       User?       @relation("InitiativeOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+
+  objectives  InitiativeObjective[]
+  milestones  Milestone[]
+  tasks       Task[]
+}
+
+model InitiativeObjective {
+  initiativeId String
+  objectiveId  String
+  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  objective    Objective  @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+
+  @@id([initiativeId, objectiveId])
+}
+
+model Milestone {
+  id           String     @id @default(uuid())
+  initiativeId String
+  title        String
+  dueDate      DateTime?
+  status       WorkStatus @default(NOT_STARTED)
+  ownerId      String?
+  createdAt    DateTime   @default(now())
+  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  owner        User?      @relation("MilestoneOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  tasks        Task[]
+}
+
+model Task {
+  id           String     @id @default(uuid())
+  initiativeId String
+  milestoneId  String?
+  title        String
+  status       WorkStatus @default(NOT_STARTED)
+  ownerId      String?
+  dueDate      DateTime?
+  createdAt    DateTime   @default(now())
+  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  milestone    Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
+  owner        User?      @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+}
+
+// ---------- 05. AI workforce ----------
+
+enum AgentKind {
+  COPILOT
+  STRATEGY
+  PRIORITISATION
+  PRD
+  BRIEFING
+}
+
+enum RunStatus {
+  RUNNING
+  DONE
+  FAILED
+}
+
+model AgentRun {
+  id              String    @id @default(uuid())
+  workspaceId     String
+  agent           AgentKind
+  status          RunStatus @default(RUNNING)
+  input           Json?
+  error           String?
+  model           String?
+  strategyVersion Int
+  startedById     String
+  createdAt       DateTime  @default(now())
+  finishedAt      DateTime?
+  workspace       Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  startedBy       User      @relation(fields: [startedById], references: [id])
+  drafts          Draft[]
+}
+
+enum DraftKind {
+  STRATEGY_PROPOSAL // proposed objectives / initiatives / re-alignments
+  BACKLOG_RANKING // re-ranked ideas
+  PRD // a PRD for an initiative
+  BRIEFING // leadership briefing
+}
+
+enum DraftStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+// Everything an agent produces lands here first. Nothing changes until a person approves.
+model Draft {
+  id           String      @id @default(uuid())
+  workspaceId  String
+  runId        String
+  kind         DraftKind
+  title        String
+  summary      String?
+  content      Json        // the structured proposal
+  sources      Json        // [{ type, id, label }]
+  targetId     String?     // e.g. the initiative a PRD is for
+  status       DraftStatus @default(PENDING)
+  reviewedById String?
+  reviewedAt   DateTime?
+  reviewNote   String?
+  createdAt    DateTime    @default(now())
+  workspace    Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  run          AgentRun    @relation(fields: [runId], references: [id], onDelete: Cascade)
+  reviewedBy   User?       @relation("DraftReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
+}
+
+model Conversation {
+  id          String    @id @default(uuid())
+  workspaceId String
+  userId      String
+  title       String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messages    ChatMessage[]
+}
+
+model ChatMessage {
+  id             String       @id @default(uuid())
+  conversationId String
+  role           String       // "user" | "assistant"
+  content        String
+  sources        Json?
+  createdAt      DateTime     @default(now())
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+}
+
+// ---------- 06. Command Centre ----------
+
+model Briefing {
+  id          String    @id @default(uuid())
+  workspaceId String
+  title       String
+  body        String    // markdown
+  shareToken  String    @unique
+  periodStart DateTime
+  periodEnd   DateTime
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  workspaceId String
+  userId      String?
+  action      String    // e.g. "idea.approved", "draft.approved"
+  targetType  String
+  targetId    String?
+  summary     String
+  createdAt   DateTime  @default(now())
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, createdAt])
+}
