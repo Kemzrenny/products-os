@@ -1,3 +1,5 @@
+import { fmtShort } from "@/lib/format";
+import { prisma } from "@/lib/prisma";
 import Link from "next/link";
 import { ArrowUpRight, Lightbulb, Bot, MessageSquareText, Sparkles, AlertTriangle, Target } from "lucide-react";
 import { getCtx } from "@/lib/context";
@@ -16,6 +18,7 @@ export default async function CommandCentre({ searchParams }: PageProps<"/app">)
   const ctx = await getCtx();
   const { denied } = await searchParams;
   const d = await commandCentre(ctx.workspace.id);
+  const blockers = await prisma.meetingItem.findMany({ where: { workspaceId: ctx.workspace.id, kind: "BLOCKER", status: "OPEN" }, orderBy: { createdAt: "desc" }, take: 6, include: { meeting: { select: { id: true, title: true, date: true } } } });
   const first = ctx.user.name.split(" ")[0];
   const avgProgress = d.objectives.length ? Math.round(d.objectives.reduce((a, o) => a + o.computed, 0) / d.objectives.length) : 0;
   const active = d.initiatives.filter((i) => i.status !== "DONE").length;
@@ -207,6 +210,22 @@ export default async function CommandCentre({ searchParams }: PageProps<"/app">)
               </ul>
             )}
           </Section>
+
+          {blockers.length > 0 && (
+            <Section title="Open blockers" action={<Link href="/app/meetings" className="link text-xs">Meetings</Link>}>
+              <ul className="flex flex-col divide-y divide-line">
+                {blockers.map((b) => (
+                  <li key={b.id} className="py-2.5 text-sm">
+                    <p className="font-semibold">{b.text}</p>
+                    <Link href={`/app/meetings/${b.meeting.id}`} className="text-[11px] text-muted hover:underline">
+                      {b.owner ? `${b.owner} · ` : ""}
+                      {b.meeting.title}, {fmtShort(b.meeting.date)}
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </Section>
+          )}
 
           <Section title="Initiative status">
             <div className="flex flex-col gap-2.5">

@@ -110,3 +110,44 @@ export function aiErrorMessage(err: unknown): string {
   console.error(err);
   return "The AI request failed. Try again.";
 }
+
+// ---------- Audio ----------
+
+// Transcribes one part of a recording. Parts are a couple of minutes long, so each call is
+// quick and a failed part can be retried on its own. The audio goes to Gemini's file store
+// (kept 48 hours there) and is deleted straight after.
+export async function aiTranscribe(audio: Buffer, mimeType: string, instruction: string, fake: () => string): Promise<{ text: string; model: string }> {
+  if (aiFake()) return { text: fake(), model: "fake" };
+  const { writeFile, unlink } = await import("fs/promises");
+  const { tmpdir } = await import("os");
+  const path = await import("path");
+  const { randomUUID } = await import("crypto");
+  const tmp = path.join(tmpdir(), `${randomUUID()}.audio`);
+  await writeFile(tmp, audio);
+  let name = "";
+  try {
+    const uploaded = await ai().files.upload({ file: tmp, config: { mimeType } });
+    name = uploaded.name ?? "";
+    const files = ai().files as unknown as { get: (a: { name: string }) => Promise<{ state?: unknown }> };
+    let state: unknown = uploaded.state;
+    for (let i = 0; i < 20 && name && String(state ?? "").toUpperCase() === "PROCESSING"; i++) {
+      await new Promise((r) => setTimeout(r, 1500));
+      state = (await files.get({ name })).state;
+    }
+    if (!uploaded.uri) throw new AiError("other", "The audio couldn't be sent for transcription.");
+    const { text, model } = await call(
+      [
+        { type: "text", text: instruction },
+        { type: "audio", uri: uploaded.uri, mime_type: uploaded.mimeType ?? mimeType },
+      ] as InteractionsInput,
+      undefined,
+      CAREFUL_MODEL,
+    );
+    return { text, model };
+  } catch (err) {
+    throw classify(err);
+  } finally {
+    await unlink(tmp).catch(() => {});
+    if (name) await (ai().files as unknown as { delete: (a: { name: string }) => Promise<unknown> }).delete({ name }).catch(() => {});
+  }
+}

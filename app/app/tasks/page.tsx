@@ -17,9 +17,9 @@ export default async function TasksPage() {
   const ctx = await getCtx();
   const [tasks, milestones, initiatives] = await Promise.all([
     prisma.task.findMany({
-      where: { ownerId: ctx.user.id, initiative: { workspaceId: ctx.workspace.id } },
+      where: { ownerId: ctx.user.id, OR: [{ initiative: { workspaceId: ctx.workspace.id } }, { meeting: { workspaceId: ctx.workspace.id } }] },
       orderBy: [{ status: "asc" }, { dueDate: { sort: "asc", nulls: "last" } }],
-      include: { initiative: { select: { id: true, title: true } } },
+      include: { initiative: { select: { id: true, title: true } }, meeting: { select: { id: true, title: true, date: true } } },
     }),
     prisma.milestone.findMany({
       where: { ownerId: ctx.user.id, initiative: { workspaceId: ctx.workspace.id }, status: { not: "DONE" } },
@@ -53,7 +53,11 @@ export default async function TasksPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-semibold">{t.title}</p>
                       <p className="text-[11px] text-muted">
-                        <Link href={`/app/initiatives/${t.initiative.id}`} className="hover:underline">{t.initiative.title}</Link>
+                        {t.initiative ? (
+                          <Link href={`/app/initiatives/${t.initiative.id}`} className="hover:underline">{t.initiative.title}</Link>
+                        ) : t.meeting ? (
+                          <Link href={`/app/meetings/${t.meeting.id}`} className="hover:underline">From {t.meeting.title}, {fmtShort(t.meeting.date)}</Link>
+                        ) : null}
                         {t.dueDate && <span className={t.dueDate < now ? "font-semibold text-bad" : ""}> · due {fmtShort(t.dueDate)}</span>}
                       </p>
                     </div>

@@ -49,6 +49,7 @@ export const DRAFT_KIND: Record<DraftKind, string> = {
   BACKLOG_RANKING: "Backlog ranking",
   PRD: "PRD",
   BRIEFING: "Leadership briefing",
+  MEETING_ACTIONS: "Meeting updates",
 };
 
 export const AGENT: Record<AgentKind, { name: string; blurb: string }> = {
@@ -57,4 +58,5 @@ export const AGENT: Record<AgentKind, { name: string; blurb: string }> = {
   PRIORITISATION: { name: "Prioritisation Agent", blurb: "Evaluates ideas and re-ranks the backlog against your strategy." },
   PRD: { name: "PRD Agent", blurb: "Drafts a PRD, user stories and acceptance criteria for an initiative." },
   BRIEFING: { name: "Briefing", blurb: "Writes the weekly leadership briefing from what changed." },
+  MEETING: { name: "Meeting notes", blurb: "Transcribes standups, writes the notes and proposes task and status updates." },
 };

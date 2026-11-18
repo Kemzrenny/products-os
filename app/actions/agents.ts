@@ -9,10 +9,13 @@ import { audit } from "@/lib/audit";
 import { atLeast } from "@/lib/roles";
 import { runStrategyAgent, runPrioritisationAgent, runPrdAgent, runBriefing, askCopilot, newShareToken, type StrategyProposal, type BacklogRanking } from "@/lib/agents";
 import type { Result } from "@/lib/result";
+import { recordReading } from "@/lib/checkins";
+import { teamMatcher } from "@/lib/import/apply";
+import type { MeetingProposals } from "@/lib/meetings";
 import type { DraftKind, Role } from "@/lib/generated/prisma/enums";
 
 // Who may approve each kind of draft.
-const APPROVER: Record<DraftKind, Role> = { STRATEGY_PROPOSAL: "ADMIN", BACKLOG_RANKING: "EDITOR", PRD: "EDITOR", BRIEFING: "ADMIN" };
+const APPROVER: Record<DraftKind, Role> = { STRATEGY_PROPOSAL: "ADMIN", BACKLOG_RANKING: "EDITOR", PRD: "EDITOR", BRIEFING: "ADMIN", MEETING_ACTIONS: "EDITOR" };
 
 function refresh(draftId?: string) {
   revalidatePath("/app/agents");
@@ -120,6 +123,70 @@ export async function approveDraft(_: Result, fd: FormData): Promise<Result> {
       });
       summary = `Approved the leadership briefing "${draft.title}"`;
       revalidatePath("/app/briefings");
+    } else if (draft.kind === "MEETING_ACTIONS") {
+      const c = draft.content as unknown as MeetingProposals;
+      const meeting = await prisma.meeting.findFirstOrThrow({ where: { id: c.meetingId, workspaceId: ctx.workspace.id } });
+      const pick = <T,>(name: string, list: T[]) => {
+        const chosen = new Set(fd.getAll(name).map(String));
+        return list.filter((_, i) => chosen.has(String(i)));
+      };
+      const match = await teamMatcher(ctx.org.id);
+      const tasks = pick("task", c.tasks).map((t, i) => {
+        const edited = str(fd, `taskTitle-${c.tasks.indexOf(t)}`) || t.title;
+        const ownerText = str(fd, `taskOwner-${c.tasks.indexOf(t)}`) || t.owner || "";
+        const owner = ownerText ? match(ownerText.split(/[/,&]/)[0].trim()) : null;
+        void i;
+        return { ...t, title: edited, ownerId: owner?.id ?? null, owner: ownerText || null };
+      });
+      const close = pick("close", c.closeTasks);
+      const statuses = pick("status", c.initiativeUpdates);
+      const checkins = pick("checkin", c.checkins);
+      const decisions = pick("decision", c.decisions);
+      const blockers = pick("blocker", c.blockers);
+      const resolve = pick("resolve", c.resolveBlockers);
+      const ideas = pick("idea", c.ideas);
+      const ws = ctx.workspace.id;
+      await prisma.$transaction(async (tx) => {
+        for (const t of tasks) {
+          const initiative = t.initiativeId ? await tx.initiative.findFirst({ where: { id: t.initiativeId, workspaceId: ws }, select: { id: true } }) : null;
+          await tx.task.create({ data: { title: t.title.slice(0, 300), meetingId: meeting.id, initiativeId: initiative?.id ?? null, ownerId: t.ownerId, ownerName: t.ownerId ? null : t.owner, dueDate: t.due ? new Date(`${t.due}T12:00:00Z`) : null } });
+        }
+        for (const t of close) {
+          await tx.task.updateMany({ where: { id: t.taskId, OR: [{ initiative: { workspaceId: ws } }, { meeting: { workspaceId: ws } }] }, data: { status: "DONE" } });
+        }
+        for (const u of statuses) {
+          await tx.initiative.updateMany({ where: { id: u.initiativeId, workspaceId: ws }, data: { status: u.status } });
+        }
+        for (const k of checkins) {
+          const kr = await tx.keyResult.findFirst({ where: { id: k.keyResultId, objective: { workspaceId: ws } }, select: { id: true } });
+          if (kr) await recordReading(tx, { keyResultId: kr.id }, { value: k.value, date: meeting.date, note: `${meeting.title}: ${k.note}`.slice(0, 500), userId: ctx.user.id });
+        }
+        if (decisions.length || blockers.length) {
+          await tx.meetingItem.createMany({
+            data: [
+              ...decisions.map((d) => ({ workspaceId: ws, meetingId: meeting.id, kind: d.kind, text: d.text, status: d.kind === "DECISION" ? ("RESOLVED" as const) : ("OPEN" as const) })),
+              ...blockers.map((b) => ({ workspaceId: ws, meetingId: meeting.id, kind: "BLOCKER" as const, text: b.text, owner: b.owner, initiativeId: b.initiativeId })),
+            ],
+          });
+        }
+        for (const r of resolve) {
+          await tx.meetingItem.updateMany({ where: { id: r.itemId, workspaceId: ws, status: "OPEN" }, data: { status: "RESOLVED", resolvedAt: new Date(), resolvedNote: `${meeting.title}: ${r.note}`.slice(0, 500) } });
+        }
+        for (const idea of ideas) {
+          await tx.idea.create({ data: { workspaceId: ws, title: idea.title.slice(0, 200), description: idea.problem, problemWhat: idea.problem, source: "Meeting", requester: meeting.title, submittedById: ctx.user.id } });
+        }
+      });
+      const parts = [
+        tasks.length && `${tasks.length} task${tasks.length === 1 ? "" : "s"} added`,
+        close.length && `${close.length} closed`,
+        statuses.length && `${statuses.length} status change${statuses.length === 1 ? "" : "s"}`,
+        checkins.length && `${checkins.length} check-in${checkins.length === 1 ? "" : "s"}`,
+        decisions.length + blockers.length && `${decisions.length + blockers.length} logged`,
+        resolve.length && `${resolve.length} blocker${resolve.length === 1 ? "" : "s"} resolved`,
+        ideas.length && `${ideas.length} idea${ideas.length === 1 ? "" : "s"}`,
+      ].filter(Boolean);
+      summary = `Applied updates from "${meeting.title}": ${parts.join(", ") || "nothing selected"}`;
+      for (const p of ["/app/meetings", "/app/tasks", "/app/roadmap", "/app/strategy", "/app/ideas"]) revalidatePath(p, "layout");
     }
 
     await prisma.draft.update({ where: { id: draft.id }, data: { status: "APPROVED", reviewedById: ctx.user.id, reviewedAt: new Date(), reviewNote: str(fd, "note") || null } });

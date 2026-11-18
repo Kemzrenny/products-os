@@ -26,6 +26,16 @@ Teams rarely start on day one of a quarter, so admins can bring in what they alr
 
 Re-importing the same sheet updates objectives, key results and initiatives instead of duplicating them. Every key result and KPI keeps a history of check-ins, shown as a trend line.
 
+### Meetings (`/app/meetings`)
+
+Daily standups and check-ins, without the record → transcribe → write-up routine.
+
+- **Capture:** record in the browser (the room's mic, or a Google Meet tab plus your mic in Chrome/Edge), upload a recording, or paste a transcript from any tool. Recordings are sent in two-minute parts as the call goes on, so long calls never need one big upload and a failed part can be retried. Audio isn't stored; only the transcript and notes are kept.
+- **Transcription** (Gemini) is primed with the team's names, products and initiatives so they're spelled right; unclear words are marked `[?]`.
+- **Notes** come out in the team's format: summary, updates by person and workstream, decisions and requests, blockers and dependencies, next actions, checks on the previous meeting's actions, highlights/lowlights/insights and what needs confirming. Reported and confirmed are kept apart. Copy one meeting or a whole day as markdown.
+- **Proposed updates** (a Meeting updates draft): new tasks with owners, tasks reported done, initiative status changes, key result check-ins, decisions/requests/blockers for the log, earlier blockers now cleared and new ideas. An editor unticks what's wrong and applies the rest; nothing changes before that.
+- Open blockers stay on the meetings log and the Command Centre until someone marks them cleared.
+
 ### Roles
 
 | Role | Can |

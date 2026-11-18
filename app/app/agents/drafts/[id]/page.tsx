@@ -9,12 +9,14 @@ import { PageHeader, Section, Chip, Notice } from "@/components/ui";
 import { ActionForm } from "@/components/forms";
 import Markdown from "@/components/Markdown";
 import { approveDraft, rejectDraft } from "@/app/actions/agents";
+import MeetingReview from "@/components/meetings/MeetingReview";
+import type { MeetingProposals } from "@/lib/meetings";
 import type { Source, StrategyProposal, BacklogRanking } from "@/lib/agents";
 import type { Role } from "@/lib/generated/prisma/enums";
 
 export const metadata = { title: "Review draft" };
 
-const APPROVER: Record<string, Role> = { STRATEGY_PROPOSAL: "ADMIN", BACKLOG_RANKING: "EDITOR", PRD: "EDITOR", BRIEFING: "ADMIN" };
+const APPROVER: Record<string, Role> = { STRATEGY_PROPOSAL: "ADMIN", BACKLOG_RANKING: "EDITOR", PRD: "EDITOR", BRIEFING: "ADMIN", MEETING_ACTIONS: "EDITOR" };
 
 export default async function DraftPage({ params }: PageProps<"/app/agents/drafts/[id]">) {
   const ctx = await getCtx();
@@ -51,6 +53,14 @@ export default async function DraftPage({ params }: PageProps<"/app/agents/draft
           {draft.summary && <p className="display text-2xl">{draft.summary}</p>}
 
           {draft.kind === "STRATEGY_PROPOSAL" && <StrategyReview id={draft.id} c={draft.content as unknown as StrategyProposal} objTitle={objTitle} canApprove={canApprove} />}
+          {draft.kind === "MEETING_ACTIONS" && (
+            <>
+              <p className="text-sm text-muted">
+                From <Link href={`/app/meetings/${draft.targetId}`} className="font-semibold text-accent hover:underline">the meeting notes</Link>. Untick anything that’s wrong.
+              </p>
+              <MeetingReview id={draft.id} c={draft.content as unknown as MeetingProposals} canApprove={canApprove} />
+            </>
+          )}
           {draft.kind === "BACKLOG_RANKING" && <RankingReview id={draft.id} c={draft.content as unknown as BacklogRanking} canApprove={canApprove} />}
           {(draft.kind === "PRD" || draft.kind === "BRIEFING") && (
             <TextReview id={draft.id} kind={draft.kind} title={draft.title} markdown={(draft.content as { markdown: string }).markdown} canApprove={canApprove} />

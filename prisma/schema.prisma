@@ -46,6 +46,7 @@ model User {
   efforts         Idea[]           @relation("EffortBy")
   checkins        Checkin[]
   imports         ImportJob[]
+  meetings        Meeting[]
 }
 
 model Organisation {
@@ -107,6 +108,8 @@ model Workspace {
   briefings       Briefing[]
   auditLogs       AuditLog[]
   imports         ImportJob[]
+  meetings        Meeting[]
+  meetingItems    MeetingItem[]
 }
 
 model Product {
@@ -417,6 +420,7 @@ model Initiative {
   objectives  InitiativeObjective[]
   milestones  Milestone[]
   tasks       Task[]
+  meetingItems MeetingItem[]
 }
 
 model InitiativeObjective {
@@ -441,16 +445,21 @@ model Milestone {
   tasks        Task[]
 }
 
+// A task belongs to an initiative, or comes straight out of a meeting ("Tolu: share the
+// remaining Web components") before anyone has tied it to roadmap work.
 model Task {
   id           String     @id @default(uuid())
-  initiativeId String
+  initiativeId String?
+  meetingId    String?
   milestoneId  String?
   title        String
   status       WorkStatus @default(NOT_STARTED)
   ownerId      String?
   dueDate      DateTime?
   createdAt    DateTime   @default(now())
-  initiative   Initiative @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  ownerName    String?    // as said in the meeting, when it isn't a team member yet
+  initiative   Initiative? @relation(fields: [initiativeId], references: [id], onDelete: Cascade)
+  meeting      Meeting?    @relation(fields: [meetingId], references: [id], onDelete: SetNull)
   milestone    Milestone? @relation(fields: [milestoneId], references: [id], onDelete: SetNull)
   owner        User?      @relation("TaskOwner", fields: [ownerId], references: [id], onDelete: SetNull)
 }
@@ -463,6 +472,7 @@ enum AgentKind {
   PRIORITISATION
   PRD
   BRIEFING
+  MEETING
 }
 
 enum RunStatus {
@@ -493,6 +503,7 @@ enum DraftKind {
   BACKLOG_RANKING // re-ranked ideas
   PRD // a PRD for an initiative
   BRIEFING // leadership briefing
+  MEETING_ACTIONS // tasks, status changes, check-ins and log items proposed from a meeting
 }
 
 enum DraftStatus {
@@ -605,4 +616,93 @@ model ImportJob {
   createdAt   DateTime     @default(now())
   workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy   User         @relation(fields: [createdById], references: [id])
+}
+
+// ---------- Meetings ----------
+
+enum MeetingStatus {
+  CAPTURING // recording, uploading or waiting for a transcript
+  PROCESSING // writing the notes
+  READY
+  FAILED
+}
+
+enum SegmentStatus {
+  PENDING
+  DONE
+  FAILED
+}
+
+// A standup or check-in: recorded or pasted, transcribed in parts, then written up as
+// notes, with proposed updates waiting for approval.
+model Meeting {
+  id          String        @id @default(uuid())
+  workspaceId String
+  title       String
+  series      String?       // e.g. "9 am standup", so each meeting can pick up the last one's actions
+  date        DateTime
+  attendees   String[]
+  source      String        @default("record") // "record" | "upload" | "transcript"
+  status      MeetingStatus @default(CAPTURING)
+  transcript  String?
+  notes       Json?
+  durationSec Int?
+  error       String?
+  createdById String
+  createdAt   DateTime      @default(now())
+  processedAt DateTime?
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User          @relation(fields: [createdById], references: [id])
+  segments    MeetingSegment[]
+  items       MeetingItem[]
+  tasks       Task[]
+
+  @@index([workspaceId, date])
+}
+
+model MeetingSegment {
+  id          String        @id @default(uuid())
+  meetingId   String
+  index       Int
+  startSec    Float         @default(0)
+  durationSec Float?
+  text        String?
+  status      SegmentStatus @default(PENDING)
+  error       String?
+  createdAt   DateTime      @default(now())
+  meeting     Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, index])
+}
+
+enum MeetingItemKind {
+  DECISION
+  REQUEST
+  BLOCKER
+}
+
+enum MeetingItemStatus {
+  OPEN
+  RESOLVED
+}
+
+// The decision and blocker log built up from meetings. Blockers stay open until a later
+// meeting (or a person) resolves them.
+model MeetingItem {
+  id           String            @id @default(uuid())
+  workspaceId  String
+  meetingId    String
+  kind         MeetingItemKind
+  text         String
+  owner        String?
+  initiativeId String?
+  status       MeetingItemStatus @default(OPEN)
+  resolvedNote String?
+  resolvedAt   DateTime?
+  createdAt    DateTime          @default(now())
+  workspace    Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  meeting      Meeting           @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  initiative   Initiative?       @relation(fields: [initiativeId], references: [id], onDelete: SetNull)
+
+  @@index([workspaceId, kind, status])
 }

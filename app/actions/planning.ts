@@ -213,21 +213,23 @@ export async function setTaskStatus(id: string, fd: FormData): Promise<Result> {
     const ctx = await requireCtx("CONTRIBUTOR");
     const status = str(fd, "status") as WorkStatus;
     if (!STATUSES.includes(status)) throw new UserError("Pick a status.");
-    const t = await prisma.task.findFirstOrThrow({ where: { id, initiative: { workspaceId: ctx.workspace.id } } });
+    const t = await prisma.task.findFirstOrThrow({ where: { id, OR: [{ initiative: { workspaceId: ctx.workspace.id } }, { meeting: { workspaceId: ctx.workspace.id } }] } });
     await prisma.task.update({ where: { id }, data: { status } });
     if (status === "DONE") await audit(ctx, "task.done", "initiative", t.initiativeId, `Finished the task "${t.title}"`);
-    refresh(t.initiativeId);
+    refresh(t.initiativeId ?? undefined);
+    revalidatePath("/app/meetings", "layout");
   });
 }
 
 export async function toggleTask(id: string): Promise<Result> {
   return attempt(async () => {
     const ctx = await requireCtx("CONTRIBUTOR");
-    const t = await prisma.task.findFirstOrThrow({ where: { id, initiative: { workspaceId: ctx.workspace.id } } });
+    const t = await prisma.task.findFirstOrThrow({ where: { id, OR: [{ initiative: { workspaceId: ctx.workspace.id } }, { meeting: { workspaceId: ctx.workspace.id } }] } });
     const status: WorkStatus = t.status === "DONE" ? "NOT_STARTED" : "DONE";
     await prisma.task.update({ where: { id }, data: { status } });
     if (status === "DONE") await audit(ctx, "task.done", "initiative", t.initiativeId, `Finished the task "${t.title}"`);
-    refresh(t.initiativeId);
+    refresh(t.initiativeId ?? undefined);
+    revalidatePath("/app/meetings", "layout");
     return status === "DONE" ? "Done." : "Reopened.";
   });
 }
@@ -235,9 +237,10 @@ export async function toggleTask(id: string): Promise<Result> {
 export async function deleteTask(id: string): Promise<Result> {
   return attempt(async () => {
     const ctx = await requireCtx("CONTRIBUTOR");
-    const t = await prisma.task.findFirstOrThrow({ where: { id, initiative: { workspaceId: ctx.workspace.id } } });
+    const t = await prisma.task.findFirstOrThrow({ where: { id, OR: [{ initiative: { workspaceId: ctx.workspace.id } }, { meeting: { workspaceId: ctx.workspace.id } }] } });
     await prisma.task.delete({ where: { id } });
-    refresh(t.initiativeId);
+    refresh(t.initiativeId ?? undefined);
+    revalidatePath("/app/meetings", "layout");
     return "Removed.";
   });
 }

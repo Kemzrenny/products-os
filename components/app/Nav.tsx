@@ -11,6 +11,7 @@ import {
   Gavel,
   Map,
   ListChecks,
+  Mic,
   MessageSquareText,
   Bot,
   FileText,
@@ -62,6 +63,7 @@ function groups(b: NavProps["badges"], role: string): { title: string; items: It
       title: "Planning",
       items: [
         { href: "/app/roadmap", label: "Roadmap", icon: Map },
+        { href: "/app/meetings", label: "Meetings", icon: Mic },
         { href: "/app/tasks", label: "My tasks", icon: ListChecks },
       ],
     },
