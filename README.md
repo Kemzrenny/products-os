@@ -30,6 +30,7 @@ Re-importing the same sheet updates objectives, key results and initiatives inst
 
 Daily standups and check-ins, without the record → transcribe → write-up routine.
 
+- **Calls in Products OS:** start a call from Meetings and share the link; the team joins from a laptop or the phone app (voice, camera, screen share). Each person's own mic is recorded on their device in two-minute parts, so the transcript has the right name on every line without guessing. Anyone can turn transcription off for themselves in the call. Runs on LiveKit (see the env vars below); members of the organisation only, so use a Meet tab recording for calls with outside people.
 - **Capture:** record in the browser (the room's mic, or a Google Meet tab plus your mic in Chrome/Edge), upload a recording, or paste a transcript from any tool. Recordings are sent in two-minute parts as the call goes on, so long calls never need one big upload and a failed part can be retried. Audio isn't stored; only the transcript and notes are kept.
 - **Transcription** (Gemini) is primed with the team's names, products and initiatives so they're spelled right; unclear words are marked `[?]`.
 - **Notes** come out in the team's format: summary, updates by person and workstream, decisions and requests, blockers and dependencies, next actions, checks on the previous meeting's actions, highlights/lowlights/insights and what needs confirming. Reported and confirmed are kept apart. Copy one meeting or a whole day as markdown.
@@ -69,7 +70,7 @@ The look follows the Rootscards style: warm off-white page, Instrument Serif hea
 
 1. Import `Kemzrenny/products-os` in Vercel.
 2. Add a Neon database from **Storage**. This sets `DATABASE_URL` and `DATABASE_URL_UNPOOLED`.
-3. Add environment variables: `JWT_SECRET`, `GEMINI_API_KEY`, `CRON_SECRET` (see `.env.example`).
+3. Add environment variables: `JWT_SECRET`, `GEMINI_API_KEY`, `CRON_SECRET` (see `.env.example`). For in-app calls also add `LIVEKIT_URL` (the `wss://…livekit.cloud` address of a LiveKit Cloud project), `LIVEKIT_API_KEY` and `LIVEKIT_API_SECRET`; without them everything else works and the call page says calls aren't set up.
 4. Deploy. The build runs `prisma migrate deploy` on production deploys, so the tables are created automatically.
 5. Open the site, press **Start free**, and set up your organisation.
 

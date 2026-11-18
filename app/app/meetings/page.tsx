@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Upload, ClipboardPaste } from "lucide-react";
+import { Plus, Upload, ClipboardPaste, Video } from "lucide-react";
 import { getCtx } from "@/lib/context";
 import { prisma } from "@/lib/prisma";
 import { atLeast } from "@/lib/roles";
@@ -37,7 +37,8 @@ export default async function MeetingsPage({ searchParams }: PageProps<"/app/mee
           <>
             <Link href="/app/meetings/new?source=paste" className="btn-quiet btn-sm"><ClipboardPaste size={13} aria-hidden /> Paste transcript</Link>
             <Link href="/app/meetings/new?source=upload" className="btn-quiet btn-sm"><Upload size={13} aria-hidden /> Upload</Link>
-            <Link href="/app/meetings/new" className="btn-primary btn-sm"><Plus size={14} aria-hidden /> New meeting</Link>
+            <Link href="/app/meetings/new" className="btn-quiet btn-sm"><Plus size={14} aria-hidden /> Record or add</Link>
+            <Link href="/app/meetings/new?source=call" className="btn-primary btn-sm"><Video size={14} aria-hidden /> Start a call</Link>
           </>
         )}
       </PageHeader>
@@ -46,7 +47,7 @@ export default async function MeetingsPage({ searchParams }: PageProps<"/app/mee
         <div className="flex flex-col gap-6">
           {meetings.length === 0 ? (
             <Empty title="No meetings yet" action={canEdit && <Link href="/app/meetings/new" className="btn-primary btn-sm">Record your first standup</Link>}>
-              Record in the browser, upload a recording or paste a transcript. You get notes by workstream, decisions, blockers and next actions, plus proposed task and status updates.
+              Start a call here, record a Google Meet tab, upload a recording or paste a transcript. You get notes by workstream, decisions, blockers and next actions, plus proposed task and status updates.
             </Empty>
           ) : (
             days.map((day) => (

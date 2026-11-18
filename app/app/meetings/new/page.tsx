@@ -27,9 +27,9 @@ export default async function NewMeetingPage({ searchParams }: PageProps<"/app/m
 
   return (
     <>
-      <PageHeader crumbs={["Planning", "Meetings", "New"]} title="New meeting notes" lead="Name the meeting, then record it, upload the recording or paste a transcript on the next screen." />
+      <PageHeader crumbs={["Planning", "Meetings", "New"]} title="New meeting notes" lead={source === "call" ? "Name the meeting and start the call. Share the link with the team; everyone joins from Products OS." : "Name the meeting, then record it, upload the recording or paste a transcript on the next screen."} />
       <Section title="Meeting" className="max-w-2xl">
-        <ActionForm action={createMeeting} submit="Continue" pending="Creating…">
+        <ActionForm action={createMeeting} submit={source === "call" ? "Start the call" : "Continue"} pending="Creating…">
           <input type="hidden" name="source" value={source} />
           <label className="flex flex-col gap-1.5">
             <span className="label">Name</span>

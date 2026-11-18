@@ -11,7 +11,8 @@ import CopyButton from "@/components/CopyButton";
 import Capture from "@/components/meetings/Capture";
 import NotesView from "@/components/meetings/NotesView";
 import MeetingReview from "@/components/meetings/MeetingReview";
-import { finishMeeting, rewriteNotes, deleteMeeting, updateMeeting } from "@/app/actions/meetings";
+import { finishMeeting, rewriteNotes, deleteMeeting, updateMeeting, endCall, reopenCall } from "@/app/actions/meetings";
+import CallPanel from "@/components/meetings/CallPanel";
 import { WORK_STATUS } from "@/lib/labels";
 
 export async function generateMetadata({ params }: PageProps<"/app/meetings/[id]">) {
@@ -40,7 +41,12 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
   const canApprove = atLeast(ctx.role, "EDITOR");
   const notes = meeting.notes as MeetingNotes | null;
   const hasNotes = !!notes && meeting.status === "READY";
-  const capturing = !hasNotes || sp.add === "1";
+  const isCall = meeting.source === "call";
+  const capturing = (!hasNotes && !isCall) || sp.add === "1";
+  const speakers = [...new Set(meeting.segments.filter((s) => s.track).map((s) => s.speaker ?? "Speaker"))].map((name) => {
+    const mine = meeting.segments.filter((s) => s.track && (s.speaker ?? "Speaker") === name);
+    return { name, done: mine.filter((s) => s.status === "DONE").length, pending: mine.filter((s) => s.status === "PENDING").length, failed: mine.filter((s) => s.status === "FAILED").length };
+  });
 
   return (
     <>
@@ -64,9 +70,24 @@ export default async function MeetingPage({ params, searchParams }: PageProps<"/
 
       <div className="mt-2 grid gap-6 xl:grid-cols-[1fr_400px]">
         <div className="flex flex-col gap-6">
+          {isCall && (!hasNotes || !meeting.callEndedAt) && (
+            <Section title="Call">
+              <CallPanel
+                meetingId={meeting.id}
+                ended={!!meeting.callEndedAt}
+                started={!!meeting.callStartedAt}
+                speakers={speakers}
+                finish={finishMeeting.bind(null, meeting.id)}
+                endCall={endCall.bind(null, meeting.id)}
+                reopen={reopenCall.bind(null, meeting.id)}
+                canEdit={canEdit}
+              />
+            </Section>
+          )}
+
           {capturing && canEdit && (
             <Section title={hasNotes ? "Add to the recording" : "Capture the meeting"}>
-              <Capture meetingId={meeting.id} existing={meeting.segments} finish={finishMeeting.bind(null, meeting.id)} initialMode={(meeting.source as "record" | "upload" | "paste") ?? "record"} />
+              <Capture meetingId={meeting.id} existing={meeting.segments.filter((s) => !s.track)} finish={finishMeeting.bind(null, meeting.id)} initialMode={(meeting.source as "record" | "upload" | "paste") ?? "record"} />
             </Section>
           )}
 

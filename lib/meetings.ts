@@ -39,21 +39,35 @@ function transcribeInstruction(meeting: { title: string; attendees: string[] }, 
 - If there is no speech, respond with exactly: [no speech]`;
 }
 
-export async function transcribePart(ctx: Ctx, meetingId: string, index: number, startSec: number, durationSec: number | null, audio: Buffer, mime: string) {
+function speakerInstruction(meeting: { title: string }, vocab: Awaited<ReturnType<typeof vocabulary>>, speaker: string) {
+  return `This is ${speaker}'s own microphone during an online product and engineering meeting ("${meeting.title}") at a company in Lagos, Nigeria.
+- Transcribe only what ${speaker} says, word for word, in the language spoken. Ignore faint voices of other people coming through speakers.
+- Start each new sentence group on its own line with the time from the start of this clip in square brackets, like [0:42].
+- Spell these names and terms exactly like this when you hear them: ${[...vocab.people, ...vocab.terms].join("; ") || "none"}.
+- If a word is unclear, write your best guess followed by [?]. Don't summarise or tidy up.
+- If ${speaker} doesn't speak, respond with exactly: [no speech]`;
+}
+
+export type Part = { track?: string; speaker?: string | null; index: number; startSec: number; durationSec: number | null };
+
+export async function transcribePart(ctx: Ctx, meetingId: string, part: Part, audio: Buffer, mime: string) {
   const meeting = await prisma.meeting.findFirstOrThrow({ where: { id: meetingId, workspaceId: ctx.workspace.id } });
   const vocab = await vocabulary(ctx, meeting.attendees);
+  const track = part.track ?? "";
+  const key = { meetingId_track_index: { meetingId, track, index: part.index } };
   await prisma.meetingSegment.upsert({
-    where: { meetingId_index: { meetingId, index } },
-    create: { meetingId, index, startSec, durationSec, status: "PENDING" },
-    update: { status: "PENDING", error: null, startSec, durationSec },
+    where: key,
+    create: { meetingId, track, speaker: part.speaker ?? null, index: part.index, startSec: part.startSec, durationSec: part.durationSec, status: "PENDING" },
+    update: { status: "PENDING", error: null, startSec: part.startSec, durationSec: part.durationSec },
   });
   try {
-    const { text } = await aiTranscribe(audio, mime, transcribeInstruction(meeting, vocab, index), () => fakeTranscript(meeting.attendees, index));
+    const instruction = track && part.speaker ? speakerInstruction(meeting, vocab, part.speaker) : transcribeInstruction(meeting, vocab, part.index);
+    const { text } = await aiTranscribe(audio, mime, instruction, () => (track ? fakeSpeakerTranscript(part.speaker ?? "Speaker", part.index) : fakeTranscript(meeting.attendees, part.index)));
     const clean = text.trim() === "[no speech]" ? "" : text.trim();
-    await prisma.meetingSegment.update({ where: { meetingId_index: { meetingId, index } }, data: { status: "DONE", text: clean } });
+    await prisma.meetingSegment.update({ where: key, data: { status: "DONE", text: clean } });
     return clean;
   } catch (err) {
-    await prisma.meetingSegment.update({ where: { meetingId_index: { meetingId, index } }, data: { status: "FAILED", error: err instanceof Error ? err.message.slice(0, 300) : "Failed" } });
+    await prisma.meetingSegment.update({ where: key, data: { status: "FAILED", error: err instanceof Error ? err.message.slice(0, 300) : "Failed" } });
     throw err;
   }
 }
@@ -63,6 +77,16 @@ function fakeTranscript(attendees: string[], index: number) {
   if (index > 0) return `${c}: Monitoring access is still not sorted for two people.\n${a}: We agreed to ship the homepage first, then account components.`;
   return `${a}: I finished the flashcards and the audio reader on Cubbes Web. The homepage is next, two days once I start. I'll share the remaining components and estimates in the channel today.\n${b}: Google recording is done and pushed. Zoom is blocked, waiting on credentials from Emmanuel.\n${c}: Sentry is configured on staging. I'll compare it with Datadog this week.`;
 }
+
+function fakeSpeakerTranscript(speaker: string, index: number) {
+  if (index > 0) return "[no speech]";
+  const first = speaker.split(" ")[0];
+  return first.length % 2
+    ? `[0:03] Good morning everyone, ${first} here.\n[0:40] I'll update the release notes before the end of the day.`
+    : `[0:12] Morning. The staging build is done.\n[0:55] I'll pair with the team on the login bug today.`;
+}
+
+export { mergeTranscript } from "@/lib/meetings-merge";
 
 // ---------- Notes ----------
 
@@ -208,7 +232,7 @@ async function meetingContext(ctx: Ctx, meeting: { id: string; series: string | 
 function fakeNotes(transcript: string, c: Awaited<ReturnType<typeof meetingContext>>): NotesResult {
   const turns = transcript
     .split("\n")
-    .map((l) => /^([A-Z][\w ./'-]{0,30}):\s*(.+)$/.exec(l.trim()))
+    .map((l) => /^(?:\[[\d:]+\]\s*)?([A-Z][\w ./'-]{0,30}):\s*(.+)$/.exec(l.trim()))
     .filter((m): m is RegExpExecArray => !!m)
     .map((m) => ({ who: m[1], said: m[2] }));
   const byPerson = new Map<string, string[]>();

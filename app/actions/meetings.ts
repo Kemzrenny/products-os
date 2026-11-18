@@ -6,7 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { requireCtx } from "@/lib/context";
 import { attempt, str, need, UserError } from "@/lib/action";
 import { audit } from "@/lib/audit";
-import { writeNotes } from "@/lib/meetings";
+import { writeNotes, mergeTranscript } from "@/lib/meetings";
+import { closeRoom } from "@/lib/livekit";
 import type { Result } from "@/lib/result";
 
 function refresh(id?: string) {
@@ -25,7 +26,7 @@ export async function createMeeting(_: Result, fd: FormData): Promise<Result> {
     const title = need(str(fd, "title"), "Give the meeting a name, like “Products and Engineering standup”.");
     const date = str(fd, "date") ? new Date(`${str(fd, "date")}T${str(fd, "time") || "09:00"}:00+01:00`) : new Date();
     if (Number.isNaN(date.getTime())) throw new UserError("That date doesn't look right.");
-    const source = ["record", "upload", "paste"].includes(str(fd, "source")) ? str(fd, "source") : "record";
+    const source = ["record", "upload", "paste", "call"].includes(str(fd, "source")) ? str(fd, "source") : "record";
     const m = await prisma.meeting.create({
       data: { workspaceId: ctx.workspace.id, title, series: title, date, attendees: names(str(fd, "attendees")), source, status: "CAPTURING", createdById: ctx.user.id },
     });
@@ -34,7 +35,7 @@ export async function createMeeting(_: Result, fd: FormData): Promise<Result> {
   });
   if (res?.error) return res;
   refresh();
-  redirect(`/app/meetings/${id}`);
+  redirect(str(fd, "source") === "call" ? `/app/meetings/${id}/call` : `/app/meetings/${id}`);
 }
 
 // Joins the transcribed parts (or takes a pasted transcript) and writes the notes.
@@ -48,10 +49,7 @@ export async function finishMeeting(meetingId: string, _: Result, fd: FormData):
       if (meeting.segments.some((s) => s.status === "PENDING")) throw new UserError("Some parts are still being transcribed. Wait a moment and try again.");
       const failed = meeting.segments.filter((s) => s.status === "FAILED");
       if (failed.length && fd.get("skipFailed") !== "on") throw new UserError(`${failed.length} part${failed.length === 1 ? "" : "s"} couldn't be transcribed. Retry them, or tick “Write notes without them”.`);
-      transcript = meeting.segments
-        .filter((s) => s.status === "DONE" && s.text)
-        .map((s) => `[${Math.floor(s.startSec / 60)}:${String(Math.round(s.startSec % 60)).padStart(2, "0")}]\n${s.text}`)
-        .join("\n\n");
+      transcript = mergeTranscript(meeting.segments);
     }
     if (!transcript.trim()) throw new UserError(pasted ? "The transcript is empty." : "Nothing was transcribed yet. Record or upload the call first, or paste a transcript.");
     const durationSec = meeting.segments.reduce((max, s) => Math.max(max, s.startSec + (s.durationSec ?? 0)), 0) || null;
@@ -108,5 +106,28 @@ export async function resolveItem(itemId: string, _: Result, fd: FormData): Prom
     });
     refresh(item.meetingId);
     return reopen ? "Reopened." : "Marked resolved.";
+  });
+}
+
+// Ends the in-app call for everyone. Each person's browser then sends its last part.
+export async function endCall(meetingId: string): Promise<Result> {
+  return attempt(async () => {
+    const ctx = await requireCtx("CONTRIBUTOR");
+    const m = await prisma.meeting.findFirstOrThrow({ where: { id: meetingId, workspaceId: ctx.workspace.id } });
+    await prisma.meeting.update({ where: { id: m.id }, data: { callEndedAt: new Date() } });
+    await closeRoom(m.id);
+    await audit(ctx, "meeting.call_ended", "meeting", m.id, `Ended the call for "${m.title}"`);
+    refresh(m.id);
+    return "Call ended.";
+  });
+}
+
+// Lets the same meeting be called into again (e.g. someone ended it by mistake).
+export async function reopenCall(meetingId: string): Promise<Result> {
+  return attempt(async () => {
+    const ctx = await requireCtx("CONTRIBUTOR");
+    await prisma.meeting.update({ where: { id: meetingId, workspaceId: ctx.workspace.id }, data: { callEndedAt: null } });
+    refresh(meetingId);
+    return "Call reopened.";
   });
 }

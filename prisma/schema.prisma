@@ -642,7 +642,7 @@ model Meeting {
   series      String?       // e.g. "9 am standup", so each meeting can pick up the last one's actions
   date        DateTime
   attendees   String[]
-  source      String        @default("record") // "record" | "upload" | "transcript"
+  source      String        @default("record") // "record" | "upload" | "paste" | "call"
   status      MeetingStatus @default(CAPTURING)
   transcript  String?
   notes       Json?
@@ -651,6 +651,8 @@ model Meeting {
   createdById String
   createdAt   DateTime      @default(now())
   processedAt DateTime?
+  callStartedAt DateTime?   // in-app call: when the first person joined (parts are timed from here)
+  callEndedAt   DateTime?
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy   User          @relation(fields: [createdById], references: [id])
   segments    MeetingSegment[]
@@ -663,6 +665,8 @@ model Meeting {
 model MeetingSegment {
   id          String        @id @default(uuid())
   meetingId   String
+  track       String        @default("") // "" for a room recording; the user id for each person's mic in an in-app call
+  speaker     String?       // the person on this track
   index       Int
   startSec    Float         @default(0)
   durationSec Float?
@@ -672,7 +676,7 @@ model MeetingSegment {
   createdAt   DateTime      @default(now())
   meeting     Meeting       @relation(fields: [meetingId], references: [id], onDelete: Cascade)
 
-  @@unique([meetingId, index])
+  @@unique([meetingId, track, index])
 }
 
 enum MeetingItemKind {
