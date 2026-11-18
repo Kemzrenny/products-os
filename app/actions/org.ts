@@ -10,6 +10,7 @@ import { requireCtx, ORG_COOKIE, WS_COOKIE } from "@/lib/context";
 import { attempt, str, optStr, optNum, optDate, need, UserError } from "@/lib/action";
 import { audit } from "@/lib/audit";
 import { bumpStrategy } from "@/lib/strategy";
+import { recordReading } from "@/lib/checkins";
 import type { Result } from "@/lib/result";
 import type { Role } from "@/lib/generated/prisma/enums";
 
@@ -52,7 +53,7 @@ export async function createOrganisation(_: Result, fd: FormData): Promise<Resul
     await bumpStrategy(org.workspaces[0].id, "Workspace created");
   });
   if (res?.error) return res;
-  redirect("/app/strategy?welcome=1");
+  redirect("/app/import?welcome=1");
 }
 
 // ---------- switching ----------
@@ -158,11 +159,17 @@ export async function saveKpi(_: Result, fd: FormData): Promise<Result> {
       target: optNum(fd, "target"),
       dueDate: optDate(fd, "dueDate"),
     };
+    const { current, ...rest } = data;
     if (id) {
-      await prisma.kpi.update({ where: { id, productId }, data });
+      const before = await prisma.kpi.findFirstOrThrow({ where: { id, productId } });
+      await prisma.$transaction(async (tx) => {
+        await tx.kpi.update({ where: { id }, data: rest });
+        if (current !== null && current !== before.current) await recordReading(tx, { kpiId: id }, { value: current, date: optDate(fd, "asOf") ?? new Date(), userId: ctx.user.id });
+      });
       await audit(ctx, "kpi.updated", "kpi", id, `Updated the KPI "${data.name}"${data.current != null ? ` (now ${data.current}${data.unit ?? ""})` : ""}`);
     } else {
-      const k = await prisma.kpi.create({ data: { ...data, productId } });
+      const k = await prisma.kpi.create({ data: { ...rest, productId } });
+      if (current !== null) await recordReading(prisma, { kpiId: k.id }, { value: current, date: new Date(), userId: ctx.user.id });
       await audit(ctx, "kpi.created", "kpi", k.id, `Added the KPI "${k.name}"`);
     }
     revalidatePath("/app/products");

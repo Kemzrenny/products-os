@@ -95,7 +95,8 @@ export default async function IdeasPage({ searchParams }: PageProps<"/app/ideas"
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-bold">{i.title}</p>
                       <p className="mt-0.5 truncate text-xs text-muted">
-                        {i.product?.name ?? "No product"} · {i.source ?? "No source"} · {i.submittedBy.name} · {timeAgo(i.createdAt)}
+                        {i.externalId ? `${i.externalId} · ` : ""}
+                        {i.product?.name ?? "No product"} · {i.requester ? `from ${i.requester}` : (i.source ?? "No source")} · {i.requester ? `added by ${i.submittedBy.name}` : i.submittedBy.name} · {timeAgo(i.createdAt)}
                         {i.effort ? ` · ${EFFORT[i.effort].split(" ")[0]}` : ""} · {i._count.evidence} evidence
                       </p>
                       {i.objectives.length > 0 && <p className="mt-1 truncate text-[11px] text-accent">Serves: {i.objectives.map((o) => o.objective.title).join(", ")}</p>}
@@ -107,6 +108,7 @@ export default async function IdeasPage({ searchParams }: PageProps<"/app/ideas"
                         </span>
                       )}
                       {ev && i.status === "EVALUATED" && <Chip tone={RECOMMENDATION[ev.recommendation].tone}>{RECOMMENDATION[ev.recommendation].label}</Chip>}
+                      {i.priority && /critical|high|urgent/i.test(i.priority) && <Chip tone={/critical|urgent/i.test(i.priority) ? "red" : "amber"}>{i.priority}</Chip>}
                       <Chip tone={IDEA_STATUS[i.status].tone}>{IDEA_STATUS[i.status].label}</Chip>
                     </div>
                   </Link>

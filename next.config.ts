@@ -1,6 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Imports send one spreadsheet tab's values (never the file) to the server.
+  experimental: { serverActions: { bodySizeLimit: "4mb" } },
   async headers() {
     return [
       {

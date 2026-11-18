@@ -10,7 +10,11 @@ export async function loadStrategy(workspaceId: string) {
     prisma.objective.findMany({
       where: { workspaceId },
       orderBy: { createdAt: "asc" },
-      include: { okrs: { include: { keyResults: true, product: { select: { name: true } } } }, _count: { select: { initiatives: true } } },
+      include: {
+        okrs: { include: { keyResults: { include: { checkins: { orderBy: [{ date: "asc" }, { createdAt: "asc" }] } } }, product: { select: { name: true } } } },
+        keyResults: { orderBy: { createdAt: "asc" }, include: { checkins: { orderBy: [{ date: "asc" }, { createdAt: "asc" }] } } },
+        _count: { select: { initiatives: true } },
+      },
     }),
     prisma.product.findMany({
       where: { workspaceId },
@@ -34,8 +38,9 @@ export function krProgress(kr: { baseline: number | null; current: number | null
 
 // An objective's progress: the average of its key results where they can be measured,
 // otherwise the figure people set by hand.
-export function objectiveProgress(o: { progress: number; okrs: { keyResults: { baseline: number | null; current: number | null; target: number | null }[] }[] }): number {
-  const values = o.okrs.flatMap((okr) => okr.keyResults.map(krProgress)).filter((v): v is number => v !== null);
+type KrNums = { baseline: number | null; current: number | null; target: number | null };
+export function objectiveProgress(o: { progress: number; okrs: { keyResults: KrNums[] }[]; keyResults?: KrNums[] }): number {
+  const values = [...(o.keyResults ?? []), ...o.okrs.flatMap((okr) => okr.keyResults)].map(krProgress).filter((v): v is number => v !== null);
   if (values.length === 0) return o.progress;
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
@@ -55,8 +60,11 @@ export function strategyText(s: Strategy): string {
   for (const o of s.objectives) {
     const pillar = s.pillars.find((p) => p.id === o.pillarId)?.name;
     lines.push(
-      `- [objective:${o.id}] ${o.title}${o.metric ? ` | measured by ${o.metric}` : ""}${o.target ? ` | target ${o.target}` : ""}${pillar ? ` | pillar ${pillar}` : ""} | status ${o.status} | progress ${objectiveProgress(o)}%`,
+      `- [objective:${o.id}] ${o.title}${o.period ? ` (${o.period})` : ""}${o.metric ? ` | measured by ${o.metric}` : ""}${o.target ? ` | target ${o.target}` : ""}${pillar ? ` | pillar ${pillar}` : ""} | status ${o.status} | progress ${objectiveProgress(o)}%`,
     );
+    for (const kr of o.keyResults) {
+      lines.push(`    KR: ${kr.title} (${kr.current ?? "?"} of ${kr.target ?? "?"}${kr.unit ? ` ${kr.unit}` : ""}, from ${kr.baseline ?? "?"})${kr.status ? ` ${kr.status}` : ""}${kr.leadNames ? ` | leads ${kr.leadNames}` : ""}${kr.note ? ` | update: ${kr.note.slice(0, 300).replace(/\s+/g, " ")}` : ""}`);
+    }
   }
   for (const p of s.products) {
     lines.push(`Product: [product:${p.id}] ${p.name}${p.vision ? ` | vision: ${p.vision}` : ""}${p.description ? ` | ${p.description}` : ""}`);
@@ -77,7 +85,7 @@ export async function bumpStrategy(workspaceId: string, note: string) {
   const snapshot = {
     vision: s.workspace.organisation.vision,
     pillars: s.pillars.map((p) => ({ id: p.id, name: p.name })),
-    objectives: s.objectives.map((o) => ({ id: o.id, title: o.title, metric: o.metric, target: o.target, status: o.status })),
+    objectives: s.objectives.map((o) => ({ id: o.id, title: o.title, period: o.period, metric: o.metric, target: o.target, status: o.status, keyResults: o.keyResults.map((k) => ({ title: k.title, target: k.target, unit: k.unit })) })),
     products: s.products.map((p) => ({ id: p.id, name: p.name, vision: p.vision, okrs: p.okrs.map((k) => ({ title: k.title, keyResults: k.keyResults.map((kr) => kr.title) })) })),
   };
   await prisma.$transaction([

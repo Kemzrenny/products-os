@@ -44,6 +44,8 @@ model User {
   conversations   Conversation[]
   auditLogs       AuditLog[]
   efforts         Idea[]           @relation("EffortBy")
+  checkins        Checkin[]
+  imports         ImportJob[]
 }
 
 model Organisation {
@@ -104,6 +106,7 @@ model Workspace {
   conversations   Conversation[]
   briefings       Briefing[]
   auditLogs       AuditLog[]
+  imports         ImportJob[]
 }
 
 model Product {
@@ -133,6 +136,7 @@ model Kpi {
   createdAt  DateTime   @default(now())
   product    Product    @relation(fields: [productId], references: [id], onDelete: Cascade)
   keyResults KeyResult[]
+  checkins   Checkin[]
 }
 
 // ---------- 02. Strategy management ----------
@@ -166,11 +170,13 @@ model Objective {
   dueDate     DateTime?
   status      ObjectiveStatus @default(ON_TRACK)
   progress    Int             @default(0) // 0–100, set by people or rolled up from key results
+  period      String?         // e.g. "Q4 2026"; objectives are usually set per quarter
   createdAt   DateTime        @default(now())
   workspace   Workspace       @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   pillar      Pillar?         @relation(fields: [pillarId], references: [id], onDelete: SetNull)
 
   okrs        Okr[]
+  keyResults  KeyResult[]
   initiatives InitiativeObjective[]
   ideas       IdeaObjective[]
 }
@@ -188,17 +194,47 @@ model Okr {
   keyResults  KeyResult[]
 }
 
+// A key result belongs to a product OKR, or straight to a company objective (the way most
+// teams write OKRs in a spreadsheet).
 model KeyResult {
-  id       String  @id @default(uuid())
-  okrId    String
-  kpiId    String?
-  title    String
-  baseline Float?
-  current  Float?
-  target   Float?
-  unit     String?
-  okr      Okr     @relation(fields: [okrId], references: [id], onDelete: Cascade)
-  kpi      Kpi?    @relation(fields: [kpiId], references: [id], onDelete: SetNull)
+  id          String      @id @default(uuid())
+  okrId       String?
+  objectiveId String?
+  kpiId       String?
+  title       String
+  baseline    Float?
+  current     Float?
+  target      Float?
+  unit        String?
+  status      WorkStatus?
+  leadNames   String?     // owners as written, when they aren't (yet) members
+  dueDate     DateTime?
+  note        String?     // latest comment / update
+  createdAt   DateTime    @default(now())
+  okr         Okr?        @relation(fields: [okrId], references: [id], onDelete: Cascade)
+  objective   Objective?  @relation(fields: [objectiveId], references: [id], onDelete: Cascade)
+  kpi         Kpi?        @relation(fields: [kpiId], references: [id], onDelete: SetNull)
+  checkins    Checkin[]
+}
+
+// A dated reading of a key result or KPI. The latest one is its current value; the rest
+// are the trend. Imports bring in the start-of-quarter value and any weekly history.
+model Checkin {
+  id          String     @id @default(uuid())
+  keyResultId String?
+  kpiId       String?
+  value       Float
+  date        DateTime
+  note        String?
+  source      String     @default("manual") // "manual" | "import"
+  createdById String?
+  createdAt   DateTime   @default(now())
+  keyResult   KeyResult? @relation(fields: [keyResultId], references: [id], onDelete: Cascade)
+  kpi         Kpi?       @relation(fields: [kpiId], references: [id], onDelete: Cascade)
+  createdBy   User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
+
+  @@index([keyResultId, date])
+  @@index([kpiId, date])
 }
 
 // A snapshot of the strategy every time it changes, so evaluations and decisions can be
@@ -250,6 +286,9 @@ model Idea {
   effortById    String?
   status        IdeaStatus  @default(NEW)
   rank          Int?        // backlog order set by the Prioritisation Agent (lower = higher)
+  priority      String?     // as written in the source log: Critical, High, Medium, Low
+  requestType   String?     // New feature, Improvement, Bug/Complaint…
+  externalId    String?     // e.g. "PR-0001" from an imported log, so re-imports don't duplicate
   submittedById String
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -330,6 +369,7 @@ model Decision {
   aiRecommendation  Recommendation?
   strategyVersion   Int
   decidedById       String
+  recordedAtImport  Boolean         @default(false) // made before Products OS; not compared with the AI
   createdAt         DateTime        @default(now())
   idea              Idea            @relation(fields: [ideaId], references: [id], onDelete: Cascade)
   decidedBy         User            @relation(fields: [decidedById], references: [id])
@@ -365,6 +405,7 @@ model Initiative {
   startDate   DateTime?
   endDate     DateTime?
   prd         String?     // approved PRD, markdown
+  leadNames   String?     // leads as written in an imported sheet
   position    Int         @default(0)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -530,4 +571,38 @@ model AuditLog {
   user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([workspaceId, createdAt])
+}
+
+// ---------- Import ----------
+
+enum ImportKind {
+  OKRS
+  IDEAS
+  METRICS
+}
+
+enum ImportStatus {
+  PENDING
+  APPLIED
+  DISCARDED
+}
+
+// A spreadsheet (or pasted text) turned into a plan. Nothing is created until a person
+// reviews the plan and applies it.
+model ImportJob {
+  id          String       @id @default(uuid())
+  workspaceId String
+  createdById String
+  kind        ImportKind
+  fileName    String?
+  sheetName   String?
+  period      String?
+  asOf        DateTime
+  plan        Json
+  status      ImportStatus @default(PENDING)
+  summary     String?
+  appliedAt   DateTime?
+  createdAt   DateTime     @default(now())
+  workspace   Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy   User         @relation(fields: [createdById], references: [id])
 }

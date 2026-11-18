@@ -322,7 +322,7 @@ export default async function IdeaPage({ params, searchParams }: PageProps<"/app
                       </p>
                       <p className="mt-1 text-xs text-ink-2">{d.reason}</p>
                       <p className="mt-1 text-[11px] text-subtle">
-                        {fmtDate(d.createdAt)} · AI said {d.aiRecommendation ? RECOMMENDATION[d.aiRecommendation].label.toLowerCase() : "nothing (not evaluated)"} · strategy v{d.strategyVersion}
+                        {fmtDate(d.createdAt)} · {d.recordedAtImport ? "recorded at import" : `AI said ${d.aiRecommendation ? RECOMMENDATION[d.aiRecommendation].label.toLowerCase() : "nothing (not evaluated)"}`} · strategy v{d.strategyVersion}
                         {d.deferUntil ? ` · deferred until ${fmtDate(d.deferUntil)}` : ""}
                       </p>
                     </div>

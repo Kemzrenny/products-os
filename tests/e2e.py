@@ -18,7 +18,7 @@ with sync_playwright() as pw:
     p.click("button:has-text('Create account')"); p.wait_for_url("**/onboarding")
     shot(p, "02-onboarding")
     p.fill("#org", "Cubbes"); p.fill("#vision", "Every African student learns with the right tools."); p.fill("#product", "Study app")
-    p.click("button:has-text('Create organisation')"); p.wait_for_url("**/app/strategy**")
+    p.click("button:has-text('Create organisation')"); p.wait_for_url("**/app/import?welcome=1"); p.goto(B + "/app/strategy")
 
     step("pillar")
     p.click("summary:has-text('Add a pillar')"); p.fill("input[aria-label='Pillar name']", "Growth"); p.click("button:has-text('Add pillar')")
@@ -45,8 +45,8 @@ with sync_playwright() as pw:
     f.locator("select[name=objectiveId]").select_option(index=1)
     f.locator("input[name=title]").fill("Make paying effortless"); f.locator("input[name=period]").fill("Q1 2027"); f.locator("button:has-text('Add OKR')").click()
     p.wait_for_selector("text=OKR added.")
-    p.goto(B + "/app/strategy"); p.click("summary:has-text('Key result')")
-    f = p.locator("form:has(button:has-text('Add key result'))")
+    p.goto(B + "/app/strategy"); p.click("[id^=okr-] summary:has-text('Key result')")
+    f = p.locator("[id^=okr-] form:has(button:has-text('Add key result'))")
     f.locator("input[name=title]").fill("Checkout conversion 2.1% to 3.5%"); f.locator("input[name=baseline]").fill("2.1"); f.locator("input[name=current]").fill("2.8"); f.locator("input[name=target]").fill("3.5"); f.locator("input[name=unit]").fill("%")
     f.locator("button:has-text('Add key result')").click(); p.wait_for_selector("text=Key result added.")
 

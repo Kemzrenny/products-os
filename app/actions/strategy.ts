@@ -7,7 +7,10 @@ import { attempt, str, optStr, optNum, optDate, need, UserError } from "@/lib/ac
 import { audit } from "@/lib/audit";
 import { bumpStrategy } from "@/lib/strategy";
 import type { Result } from "@/lib/result";
-import type { ObjectiveStatus } from "@/lib/generated/prisma/enums";
+import type { ObjectiveStatus, WorkStatus } from "@/lib/generated/prisma/enums";
+import { recordReading } from "@/lib/checkins";
+
+const WORK: WorkStatus[] = ["NOT_STARTED", "IN_PROGRESS", "AT_RISK", "BLOCKED", "DONE"];
 
 const STATUSES: ObjectiveStatus[] = ["ON_TRACK", "AT_RISK", "OFF_TRACK", "DONE"];
 
@@ -61,6 +64,7 @@ export async function saveObjective(_: Result, fd: FormData): Promise<Result> {
       metric: optStr(fd, "metric"),
       target: optStr(fd, "target"),
       dueDate: optDate(fd, "dueDate"),
+      period: optStr(fd, "period"),
       pillarId,
     };
     let objectiveId = id;
@@ -142,23 +146,41 @@ export async function deleteOkr(id: string): Promise<Result> {
 export async function saveKeyResult(_: Result, fd: FormData): Promise<Result> {
   return attempt(async () => {
     const ctx = await requireCtx("EDITOR");
-    const okrId = str(fd, "okrId");
-    const okr = await prisma.okr.findFirstOrThrow({ where: { id: okrId, product: { workspaceId: ctx.workspace.id } } });
+    // A key result hangs off a product OKR or straight off a company objective.
+    const okrId = optStr(fd, "okrId");
+    const objectiveId = okrId ? null : optStr(fd, "objectiveId");
+    if (!okrId && !objectiveId) throw new UserError("Pick the objective this key result measures.");
+    const okr = okrId ? await prisma.okr.findFirstOrThrow({ where: { id: okrId, product: { workspaceId: ctx.workspace.id } } }) : null;
+    if (objectiveId) await prisma.objective.findFirstOrThrow({ where: { id: objectiveId, workspaceId: ctx.workspace.id } });
     const kpiId = optStr(fd, "kpiId");
-    if (kpiId) await prisma.kpi.findFirstOrThrow({ where: { id: kpiId, productId: okr.productId } });
+    if (kpiId && okr) await prisma.kpi.findFirstOrThrow({ where: { id: kpiId, productId: okr.productId } });
     const id = str(fd, "id");
+    const status = str(fd, "status") as WorkStatus;
     const data = {
       title: need(str(fd, "title"), "Write the key result."),
-      kpiId,
+      kpiId: okr ? kpiId : null,
       baseline: optNum(fd, "baseline"),
-      current: optNum(fd, "current"),
       target: optNum(fd, "target"),
       unit: optStr(fd, "unit"),
+      ...(fd.has("status") ? { status: WORK.includes(status) ? status : null } : {}),
+      ...(fd.has("leadNames") ? { leadNames: optStr(fd, "leadNames") } : {}),
+      ...(fd.has("dueDate") ? { dueDate: optDate(fd, "dueDate") } : {}),
     };
-    if (id) await prisma.keyResult.update({ where: { id, okrId }, data });
-    else await prisma.keyResult.create({ data: { ...data, okrId } });
+    const current = optNum(fd, "current");
+    const asOf = optDate(fd, "asOf") ?? new Date();
+    const note = optStr(fd, "note");
+    await prisma.$transaction(async (tx) => {
+      const before = id ? await tx.keyResult.findFirstOrThrow({ where: { id, OR: [{ okr: { product: { workspaceId: ctx.workspace.id } } }, { objective: { workspaceId: ctx.workspace.id } }] } }) : null;
+      const kr = before
+        ? await tx.keyResult.update({ where: { id: before.id }, data: { ...data, ...(note ? { note } : {}) } })
+        : await tx.keyResult.create({ data: { ...data, okrId, objectiveId, note, current } });
+      // A new value is a check-in, so the trend is kept.
+      if (current !== null && (!before || before.current !== current || fd.has("asOf"))) {
+        await recordReading(tx, { keyResultId: kr.id }, { value: current, date: asOf, note, userId: ctx.user.id });
+      }
+    });
     if (!id) await bumpStrategy(ctx.workspace.id, `Key result "${data.title}" added`);
-    await audit(ctx, id ? "kr.updated" : "kr.created", "keyResult", id || null, `${id ? "Updated" : "Added"} the key result "${data.title}"${data.current != null ? ` (now ${data.current})` : ""}`);
+    await audit(ctx, id ? "kr.updated" : "kr.created", "keyResult", id || null, `${id ? "Updated" : "Added"} the key result "${data.title}"${current != null ? ` (now ${current}${data.unit ?? ""})` : ""}`);
     done();
     return id ? "Saved." : "Key result added.";
   });
@@ -167,7 +189,7 @@ export async function saveKeyResult(_: Result, fd: FormData): Promise<Result> {
 export async function deleteKeyResult(id: string): Promise<Result> {
   return attempt(async () => {
     const ctx = await requireCtx("EDITOR");
-    await prisma.keyResult.deleteMany({ where: { id, okr: { product: { workspaceId: ctx.workspace.id } } } });
+    await prisma.keyResult.deleteMany({ where: { id, OR: [{ okr: { product: { workspaceId: ctx.workspace.id } } }, { objective: { workspaceId: ctx.workspace.id } }] } });
     done();
     return "Removed.";
   });

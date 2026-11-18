@@ -1,5 +1,7 @@
 import Link from "next/link";
-import { Plus, Pencil, Trash2, AlertTriangle } from "lucide-react";
+import { Plus, Pencil, Trash2, AlertTriangle, Upload } from "lucide-react";
+import Sparkline from "@/components/Sparkline";
+import { quarterOf } from "@/lib/import/values";
 import { getCtx } from "@/lib/context";
 import { prisma } from "@/lib/prisma";
 import { loadStrategy, objectiveProgress, krProgress } from "@/lib/strategy";
@@ -15,8 +17,16 @@ export const metadata = { title: "Strategy" };
 
 export default async function StrategyPage({ searchParams }: PageProps<"/app/strategy">) {
   const ctx = await getCtx();
-  const { welcome } = await searchParams;
+  const { welcome, period: periodParam, imported } = await searchParams;
   const s = await loadStrategy(ctx.workspace.id);
+  // Objectives are usually set per quarter: show the latest quarter unless asked otherwise.
+  const periods = [...new Set(s.objectives.map((o) => o.period).filter((p): p is string => !!p))].sort((a, b) => {
+    const qa = quarterOf(a);
+    const qb = quarterOf(b);
+    return (qb?.year ?? 0) * 10 + (qb?.q ?? 0) - ((qa?.year ?? 0) * 10 + (qa?.q ?? 0));
+  });
+  const period = typeof periodParam === "string" ? periodParam : (periods[0] ?? "all");
+  const shown = period === "all" ? s.objectives : s.objectives.filter((o) => o.period === period || !o.period);
   const [initiatives, versions] = await Promise.all([
     prisma.initiative.findMany({ where: { workspaceId: ctx.workspace.id }, include: { objectives: { select: { objectiveId: true } } }, orderBy: { createdAt: "asc" } }),
     prisma.strategyVersion.findMany({ where: { workspaceId: ctx.workspace.id }, orderBy: { version: "desc" }, take: 6 }),
@@ -33,11 +43,28 @@ export default async function StrategyPage({ searchParams }: PageProps<"/app/str
         lead="Vision, pillars, objectives and OKRs, connected to the initiatives that serve them. Every idea is judged against this."
       >
         <Chip tone="blue" dot={false}>Strategy v{ctx.workspace.strategyVersion}</Chip>
+        {admin && (
+          <Link href="/app/import" className="btn-quiet">
+            <Upload size={14} aria-hidden /> Import OKRs
+          </Link>
+        )}
       </PageHeader>
+
+      {imported && <Notice tone="green"><b>Import complete.</b> Your objectives, key results and progress so far are below. Check-ins from the sheet show as each key result&apos;s trend.</Notice>}
+
+      {periods.length > 0 && (
+        <nav aria-label="Period" className="flex flex-wrap gap-1 self-start rounded-full border border-line bg-card p-1 shadow-[var(--shadow-soft)]">
+          {[...periods, "all"].map((p) => (
+            <Link key={p} href={`/app/strategy?period=${encodeURIComponent(p)}`} aria-current={p === period ? "page" : undefined} className={`rounded-full px-3 py-1.5 text-xs font-bold ${p === period ? "bg-ink text-white" : "text-ink-2 hover:bg-bg-2"}`}>
+              {p === "all" ? "All periods" : p}
+            </Link>
+          ))}
+        </nav>
+      )}
 
       {welcome && (
         <Notice tone="blue">
-          <b>Welcome to {ctx.org.name}.</b> Add one to three company objectives first. Then add your products and their KPIs, and invite your team from Settings.
+          <b>Welcome to {ctx.org.name}.</b> Already have OKRs in a spreadsheet? <Link className="link" href="/app/import">Import them with your progress so far</Link>. Otherwise add one to three company objectives first. Then add your products and their KPIs, and invite your team from Settings.
         </Notice>
       )}
 
@@ -54,19 +81,23 @@ export default async function StrategyPage({ searchParams }: PageProps<"/app/str
             )}
           </Section>
 
-          <Section title={`Company objectives (${s.objectives.length})`}>
+          <Section title={`Company objectives (${shown.length})`}>
             <div className="flex flex-col gap-4">
-              {s.objectives.length === 0 && <Empty title="No objectives yet">What does the business need to achieve this period? For example, &ldquo;Grow paying subscribers 40% by June&rdquo;.</Empty>}
-              {s.objectives.map((o) => {
+              {s.objectives.length === 0 && (
+                <Empty title="No objectives yet" action={admin ? <Link href="/app/import" className="btn-quiet"><Upload size={14} aria-hidden /> Import from a spreadsheet</Link> : undefined}>
+                  What does the business need to achieve this period? For example, &ldquo;Grow paying subscribers 40% by June&rdquo;.
+                </Empty>
+              )}
+              {shown.map((o) => {
                 const pillar = s.pillars.find((p) => p.id === o.pillarId);
                 const serving = initiatives.filter((i) => i.objectives.some((x) => x.objectiveId === o.id));
                 const progress = objectiveProgress(o);
-                const measured = o.okrs.some((k) => k.keyResults.some((kr) => krProgress(kr) !== null));
+                const measured = [...o.keyResults, ...o.okrs.flatMap((k) => k.keyResults)].some((kr) => krProgress(kr) !== null);
                 return (
                   <article key={o.id} id={`o-${o.id}`} className="scroll-mt-24 rounded-2xl border border-line p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="min-w-0 flex-1">
-                        {pillar && <p className="eyebrow mb-1 text-[10px]">{pillar.name}</p>}
+                        {(pillar || o.period) && <p className="eyebrow mb-1 text-[10px]">{[o.period, pillar?.name].filter(Boolean).join(" · ")}</p>}
                         <h3 className="text-[15px] font-extrabold">{o.title}</h3>
                         <p className="mt-0.5 text-xs text-muted">
                           {o.metric ? `Measured by ${o.metric}` : "No metric yet"}
@@ -91,6 +122,24 @@ export default async function StrategyPage({ searchParams }: PageProps<"/app/str
                       <p className="mt-1 text-[11px] text-subtle">{measured ? "Rolled up from key results" : "Set by hand"}</p>
                     </div>
                     {o.description && <p className="mt-2 text-sm text-ink-2">{o.description}</p>}
+
+                    <div className="mt-4">
+                      <p className="eyebrow mb-2 text-[10px]">Key results ({o.keyResults.length})</p>
+                      {o.keyResults.length === 0 && <p className="text-xs text-muted">None yet. Add how you&apos;ll measure this objective.</p>}
+                      <ul className="flex flex-col gap-2.5">
+                        {o.keyResults.map((kr) => (
+                          <KeyResultRow key={kr.id} kr={kr} objectiveId={o.id} editor={editor} />
+                        ))}
+                      </ul>
+                      {editor && (
+                        <details className="mt-2">
+                          <summary className="inline-flex cursor-pointer items-center gap-1 text-[11px] font-bold text-accent"><Plus size={11} aria-hidden /> Key result</summary>
+                          <div className="mt-2">
+                            <DirectKrFields objectiveId={o.id} />
+                          </div>
+                        </details>
+                      )}
+                    </div>
 
                     <div className="mt-3 grid gap-3 sm:grid-cols-2">
                       <div>
@@ -326,7 +375,7 @@ export default async function StrategyPage({ searchParams }: PageProps<"/app/str
   );
 }
 
-function ObjectiveFields({ action, pillars, o }: { action: typeof saveObjective; pillars: { id: string; name: string }[]; o?: { id: string; title: string; description: string | null; metric: string | null; target: string | null; dueDate: Date | null; pillarId: string | null } }) {
+function ObjectiveFields({ action, pillars, o }: { action: typeof saveObjective; pillars: { id: string; name: string }[]; o?: { id: string; title: string; description: string | null; metric: string | null; target: string | null; dueDate: Date | null; pillarId: string | null; period: string | null } }) {
   const p = o?.id ?? "new";
   return (
     <ActionForm action={action} submit={o ? "Save objective" : "Add objective"} reset={!o} className="grid gap-3 sm:grid-cols-2">
@@ -342,6 +391,10 @@ function ObjectiveFields({ action, pillars, o }: { action: typeof saveObjective;
       <div>
         <label className="label" htmlFor={`tg-${p}`}>Target</label>
         <input id={`tg-${p}`} name="target" className="field" defaultValue={o?.target ?? ""} placeholder="e.g. +40% (12,000)" />
+      </div>
+      <div>
+        <label className="label" htmlFor={`pe-${p}`}>Period</label>
+        <input id={`pe-${p}`} name="period" className="field" defaultValue={o?.period ?? ""} placeholder="e.g. Q4 2026" />
       </div>
       <div>
         <label className="label" htmlFor={`d-${p}`}>Due</label>
@@ -397,6 +450,115 @@ function KrFields({ okrId, kpis, kr }: { okrId: string; kpis: { id: string; name
           </select>
         </div>
       )}
+    </ActionForm>
+  );
+}
+
+type DirectKr = {
+  id: string;
+  title: string;
+  baseline: number | null;
+  current: number | null;
+  target: number | null;
+  unit: string | null;
+  status: keyof typeof WORK_STATUS | null;
+  leadNames: string | null;
+  dueDate: Date | null;
+  note: string | null;
+  checkins: { date: Date; value: number; note: string | null; source: string }[];
+};
+
+function KeyResultRow({ kr, objectiveId, editor }: { kr: DirectKr; objectiveId: string; editor: boolean }) {
+  const v = krProgress(kr);
+  const u = kr.unit ?? "";
+  const last = kr.checkins.at(-1);
+  return (
+    <li className="rounded-xl bg-field p-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 text-xs font-semibold">{kr.title}</p>
+        {kr.status && <Chip tone={WORK_STATUS[kr.status].tone}>{WORK_STATUS[kr.status].label}</Chip>}
+      </div>
+      <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-2">
+        <span className="text-xs tabular-nums">
+          <b className="text-sm">{kr.current ?? "–"}{u}</b> <span className="text-muted">of {kr.target ?? "–"}{u}{kr.baseline !== null ? `, from ${kr.baseline}${u}` : ""}</span>
+        </span>
+        <Sparkline points={kr.checkins} target={kr.target} unit={kr.unit} />
+        {(kr.leadNames || kr.dueDate) && <span className="text-[11px] text-muted">{[kr.leadNames, kr.dueDate ? `due ${fmtDate(kr.dueDate)}` : null].filter(Boolean).join(" · ")}</span>}
+      </div>
+      {v !== null && <div className="mt-2"><Progress value={v} label={kr.title} /></div>}
+      {last && <p className="mt-1 text-[11px] text-subtle">Last reading {fmtDate(last.date)}{last.source === "import" ? " (imported)" : ""} · {kr.checkins.length} reading{kr.checkins.length === 1 ? "" : "s"}</p>}
+      {kr.note && (
+        <details className="mt-1.5 text-xs">
+          <summary className="cursor-pointer font-bold text-accent">Latest update</summary>
+          <p className="mt-1 whitespace-pre-line text-ink-2">{kr.note}</p>
+        </details>
+      )}
+      {editor && (
+        <details className="mt-1.5">
+          <summary className="cursor-pointer text-[11px] font-bold text-accent">Check in</summary>
+          <div className="mt-2 flex flex-col gap-2">
+            <DirectKrFields objectiveId={objectiveId} kr={kr} />
+            <ActionButton action={deleteKeyResult.bind(null, kr.id)} className="btn-ghost btn-sm self-start text-bad" confirm="Delete this key result and its history?">
+              Delete key result
+            </ActionButton>
+          </div>
+        </details>
+      )}
+    </li>
+  );
+}
+
+// Adding a key result to an objective, or checking in on one: a new current value is
+// recorded with its date, so the trend builds up week by week.
+function DirectKrFields({ objectiveId, kr }: { objectiveId: string; kr?: DirectKr }) {
+  const p = kr?.id ?? `new-${objectiveId}`;
+  return (
+    <ActionForm action={saveKeyResult} submit={kr ? "Save check-in" : "Add key result"} reset={!kr} submitClass="btn-quiet btn-sm" className="grid gap-2 sm:grid-cols-4">
+      <input type="hidden" name="objectiveId" value={objectiveId} />
+      {kr && <input type="hidden" name="id" value={kr.id} />}
+      <div className="sm:col-span-4">
+        <label className="label" htmlFor={`dt-${p}`}>Key result</label>
+        <input id={`dt-${p}`} name="title" className="field" required defaultValue={kr?.title} placeholder="e.g. Seven-day study activation from 17% to 25%" />
+      </div>
+      <div>
+        <label className="label" htmlFor={`dc-${p}`}>{kr ? "Value now" : "Current"}</label>
+        <input id={`dc-${p}`} name="current" className="field" inputMode="decimal" defaultValue={kr?.current ?? ""} />
+      </div>
+      {kr ? (
+        <div>
+          <label className="label" htmlFor={`da-${p}`}>As of</label>
+          <input id={`da-${p}`} name="asOf" type="date" className="field" defaultValue={new Date().toISOString().slice(0, 10)} />
+        </div>
+      ) : (
+        <div>
+          <label className="label" htmlFor={`db-${p}`}>Start</label>
+          <input id={`db-${p}`} name="baseline" className="field" inputMode="decimal" />
+        </div>
+      )}
+      <div>
+        <label className="label" htmlFor={`dg-${p}`}>Target</label>
+        <input id={`dg-${p}`} name="target" className="field" inputMode="decimal" defaultValue={kr?.target ?? ""} />
+      </div>
+      <div>
+        <label className="label" htmlFor={`du-${p}`}>Unit</label>
+        <input id={`du-${p}`} name="unit" className="field" defaultValue={kr?.unit ?? ""} placeholder="%" />
+      </div>
+      {kr && <input type="hidden" name="baseline" value={kr.baseline ?? ""} />}
+      <div className="sm:col-span-2">
+        <label className="label" htmlFor={`ds-${p}`}>Status</label>
+        <select id={`ds-${p}`} name="status" className="field" defaultValue={kr?.status ?? ""}>
+          <option value="">Not set</option>
+          {Object.entries(WORK_STATUS).map(([v, s]) => <option key={v} value={v}>{s.label}</option>)}
+        </select>
+      </div>
+      <div className="sm:col-span-2">
+        <label className="label" htmlFor={`dl-${p}`}>Leads</label>
+        <input id={`dl-${p}`} name="leadNames" className="field" defaultValue={kr?.leadNames ?? ""} />
+      </div>
+      <div className="sm:col-span-4">
+        <label className="label" htmlFor={`dn-${p}`}>Update note <span className="font-normal text-muted">(optional)</span></label>
+        <textarea id={`dn-${p}`} name="note" className="field min-h-14" placeholder="What changed since the last check-in?" />
+      </div>
     </ActionForm>
   );
 }

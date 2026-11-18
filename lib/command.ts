@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "@/lib/prisma";
 import { objectiveProgress } from "@/lib/strategy";
+import { quarterOf } from "@/lib/import/values";
 
 export type RiskReason = string;
 
@@ -22,7 +23,7 @@ export function riskReasons(
 
 export async function commandCentre(workspaceId: string) {
   const [objectives, initiatives, products, pendingIdeas, pendingDrafts, latestBriefing, recent] = await Promise.all([
-    prisma.objective.findMany({ where: { workspaceId }, orderBy: { createdAt: "asc" }, include: { okrs: { include: { keyResults: true } }, _count: { select: { initiatives: true } } } }),
+    prisma.objective.findMany({ where: { workspaceId }, orderBy: { createdAt: "asc" }, include: { okrs: { include: { keyResults: true } }, keyResults: true, _count: { select: { initiatives: true } } } }),
     prisma.initiative.findMany({
       where: { workspaceId },
       orderBy: [{ horizon: "asc" }, { position: "asc" }, { createdAt: "asc" }],
@@ -56,8 +57,17 @@ export async function commandCentre(workspaceId: string) {
   const statusCounts = { NOT_STARTED: 0, IN_PROGRESS: 0, AT_RISK: 0, BLOCKED: 0, DONE: 0 } as Record<string, number>;
   for (const i of initiatives) statusCounts[i.status]++;
 
+  // The Command Centre shows the latest quarter's objectives (plus any without a period).
+  const latest = [...new Set(objectives.map((o) => o.period).filter((p): p is string => !!p))].sort((a, b) => {
+    const qa = quarterOf(a);
+    const qb = quarterOf(b);
+    return (qb?.year ?? 0) * 10 + (qb?.q ?? 0) - ((qa?.year ?? 0) * 10 + (qa?.q ?? 0));
+  })[0];
+  const current = latest ? objectives.filter((o) => !o.period || o.period === latest) : objectives;
+
   return {
-    objectives: objectives.map((o) => ({ ...o, computed: objectiveProgress(o) })),
+    period: latest ?? null,
+    objectives: current.map((o) => ({ ...o, computed: objectiveProgress(o) })),
     initiatives: withRisk,
     atRisk: withRisk.filter((i) => i.risks.length > 0),
     statusCounts,

@@ -15,6 +15,17 @@ It's a website and an installable app (PWA) in one Next.js project.
 | 05 AI workforce | `/app/copilot`, `/app/agents` | Product Copilot, Strategy, Prioritisation and PRD agents, source references, drafts with human approval |
 | 06 Command Centre | `/app` | Portfolio, objective progress, initiative status, pending decisions, at-risk initiatives, AI briefing (shareable at `/b/<token>`) |
 
+### Importing existing work (`/app/import`)
+
+Teams rarely start on day one of a quarter, so admins can bring in what they already have. The file is read in the browser; only the chosen tab's values are sent, and nothing is saved until the preview is approved.
+
+- **OKR sheets** (`.xlsx` or `.csv`): finds the header and columns (objective, key result, initiatives, status, starting/target/current values, % progress, lead, due date, comments), the quarter sections (`Q1`…`Q4`), and objectives in merged cells. Fractions are read as percentages where the key result talks about a percentage. Each starting value is recorded on the first day of the quarter and the current value on the "as of" date, so progress starts mid-quarter with a real trend. Each key result's plan can become a roadmap initiative. Leads are matched to team members by name. Rows that look like notes are left unticked, and suspicious numbers are flagged.
+- **Request / complaint logs**: each row becomes an idea. Resolved or in-progress rows come in with a decision marked "recorded at import", which is never compared with the AI. Categories map to products. Request IDs stop re-imports from duplicating.
+- **Weekly trackers**: each week's actual becomes a dated check-in on a key result from the same quarter, or a product KPI.
+- **Paste anything**: the AI reads pasted text (Notion, docs, slides) into the same preview.
+
+Re-importing the same sheet updates objectives, key results and initiatives instead of duplicating them. Every key result and KPI keeps a history of check-ins, shown as a trend line.
+
 ### Roles
 
 | Role | Can |

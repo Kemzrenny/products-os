@@ -41,9 +41,16 @@ export default async function CommandCentre({ searchParams }: PageProps<"/app">)
             </p>
             <p className="text-sm text-white/70">Add your objectives first. Every idea and initiative is judged against them.</p>
           </div>
-          <Link href="/app/strategy" className="btn bg-white text-ink hover:bg-white/90">
-            Set strategy <ArrowUpRight size={14} aria-hidden />
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {ctx.role === "ADMIN" && (
+              <Link href="/app/import" className="btn bg-white text-ink hover:bg-white/90">
+                Import from a spreadsheet <ArrowUpRight size={14} aria-hidden />
+              </Link>
+            )}
+            <Link href="/app/strategy" className="btn border border-white/30 text-white hover:bg-white/10">
+              Set strategy
+            </Link>
+          </div>
         </div>
       )}
 
@@ -62,7 +69,7 @@ export default async function CommandCentre({ searchParams }: PageProps<"/app">)
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_1fr]">
         <div className="flex flex-col gap-6">
-          <Section title="Objective progress" action={<Link href="/app/strategy" className="link text-xs">Strategy</Link>}>
+          <Section title={d.period ? `Objective progress · ${d.period}` : "Objective progress"} action={<Link href="/app/strategy" className="link text-xs">Strategy</Link>}>
             {d.objectives.length === 0 ? (
               <Empty title="No objectives yet">Add the company objectives this period commits to.</Empty>
             ) : (
@@ -73,7 +80,7 @@ export default async function CommandCentre({ searchParams }: PageProps<"/app">)
                     <div className="min-w-0 flex-1">
                       <Link href={`/app/strategy#o-${o.id}`} className="text-sm font-bold hover:underline">{o.title}</Link>
                       <p className="truncate text-xs text-muted">
-                        {o.metric ?? "No metric yet"}
+                        {o.keyResults.length ? `${o.keyResults.length} key result${o.keyResults.length === 1 ? "" : "s"}` : (o.metric ?? "No metric yet")}
                         {o.target ? ` · target ${o.target}` : ""} · {o._count.initiatives} initiative{o._count.initiatives === 1 ? "" : "s"}
                       </p>
                     </div>

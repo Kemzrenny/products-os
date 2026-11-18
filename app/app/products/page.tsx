@@ -5,6 +5,7 @@ import { atLeast } from "@/lib/roles";
 import { dateInput, fmtDate } from "@/lib/format";
 import { krProgress } from "@/lib/strategy";
 import { PageHeader, Section, Empty, Progress } from "@/components/ui";
+import Sparkline from "@/components/Sparkline";
 import { ActionForm, ActionButton } from "@/components/forms";
 import { saveProduct, deleteProduct, saveKpi, deleteKpi } from "@/app/actions/org";
 
@@ -15,7 +16,7 @@ export default async function ProductsPage() {
   const products = await prisma.product.findMany({
     where: { workspaceId: ctx.workspace.id },
     orderBy: { createdAt: "asc" },
-    include: { kpis: { orderBy: { createdAt: "asc" } }, _count: { select: { ideas: true, initiatives: true, okrs: true } } },
+    include: { kpis: { orderBy: { createdAt: "asc" }, include: { checkins: { orderBy: { date: "asc" }, select: { date: true, value: true } } } }, _count: { select: { ideas: true, initiatives: true, okrs: true } } },
   });
   const admin = ctx.role === "ADMIN";
   const editor = atLeast(ctx.role, "EDITOR");
@@ -48,6 +49,7 @@ export default async function ProductsPage() {
                           <b className="text-ink">{k.current ?? "–"}{k.unit}</b> of {k.target ?? "–"}{k.unit}
                         </p>
                       </div>
+                      {k.checkins.length > 1 && <div className="mt-2"><Sparkline points={k.checkins} target={k.target} unit={k.unit} width={220} /></div>}
                       {v !== null && <div className="mt-2"><Progress value={v} label={k.name} /></div>}
                       {k.dueDate && <p className="mt-1 text-[11px] text-subtle">Due {fmtDate(k.dueDate)}</p>}
                       {editor && (

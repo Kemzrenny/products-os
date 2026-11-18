@@ -79,7 +79,7 @@ export default async function DecisionsPage({ searchParams }: PageProps<"/app/de
                     <p className="text-[11px] text-muted">{d.idea.product?.name ?? "No product"}</p>
                   </td>
                   <td className="px-3 py-3"><Chip tone={OUTCOME[d.outcome].tone}>{OUTCOME[d.outcome].label}</Chip></td>
-                  <td className="px-3 py-3 text-xs text-muted">{d.aiRecommendation ? RECOMMENDATION[d.aiRecommendation].label : "–"}</td>
+                  <td className="px-3 py-3 text-xs text-muted">{d.recordedAtImport ? "Recorded at import" : d.aiRecommendation ? RECOMMENDATION[d.aiRecommendation].label : "–"}</td>
                   <td className="max-w-sm px-3 py-3 text-xs text-ink-2">{d.reason}</td>
                   <td className="px-5 py-3 text-xs text-muted">
                     {d.decidedBy.name}

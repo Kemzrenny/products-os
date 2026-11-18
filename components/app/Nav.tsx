@@ -20,6 +20,7 @@ import {
   LogOut,
   ChevronsUpDown,
   Plus,
+  Upload,
 } from "lucide-react";
 import Logo from "@/components/Logo";
 import { Avatar } from "@/components/ui";
@@ -39,7 +40,7 @@ export type NavProps = {
   badges: { drafts: number; ideas: number };
 };
 
-function groups(b: NavProps["badges"]): { title: string; items: Item[] }[] {
+function groups(b: NavProps["badges"], role: string): { title: string; items: Item[] }[] {
   return [
     {
       title: "Menu",
@@ -47,6 +48,7 @@ function groups(b: NavProps["badges"]): { title: string; items: Item[] }[] {
         { href: "/app", label: "Command Centre", icon: LayoutDashboard },
         { href: "/app/strategy", label: "Strategy", icon: Target },
         { href: "/app/products", label: "Products & KPIs", icon: Package },
+        ...(role === "ADMIN" ? [{ href: "/app/import", label: "Import", icon: Upload }] : []),
       ],
     },
     {
@@ -79,11 +81,11 @@ function isActive(path: string, href: string) {
   return path === href || path.startsWith(`${href}/`) || (href === "/app/roadmap" && path.startsWith("/app/initiatives"));
 }
 
-function Links({ badges, onNavigate }: { badges: NavProps["badges"]; onNavigate?: () => void }) {
+function Links({ badges, role, onNavigate }: { badges: NavProps["badges"]; role: string; onNavigate?: () => void }) {
   const path = usePathname();
   return (
     <nav className="flex flex-col gap-5" aria-label="Main">
-      {groups(badges).map((g) => (
+      {groups(badges, role).map((g) => (
         <div key={g.title} className="flex flex-col gap-0.5">
           <p className="eyebrow px-3 pb-1.5 text-[10px]">{g.title}</p>
           {g.items.map((it) => {
@@ -189,7 +191,7 @@ export function Sidebar(props: NavProps) {
       </Link>
       <Switcher props={props} />
       <div className="flex-1">
-        <Links badges={props.badges} />
+        <Links badges={props.badges} role={props.role} />
       </div>
       <div className="px-2">
         <InstallButton className="btn-quiet btn-sm w-full" />
@@ -235,7 +237,7 @@ export function MobileNav(props: NavProps) {
             </div>
             <Switcher props={props} />
             <div className="flex-1">
-              <Links badges={props.badges} onNavigate={() => setOpen(false)} />
+              <Links badges={props.badges} role={props.role} onNavigate={() => setOpen(false)} />
             </div>
             <div className="px-2">
               <InstallButton className="btn-quiet btn-sm w-full" />
